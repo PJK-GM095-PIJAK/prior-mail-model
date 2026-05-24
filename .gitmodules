@@ -1,0 +1,3 @@
+[submodule "docs"]
+	path = docs
+	url = https://github.com/PJK-GM095-PIJAK/prior-mail-docs.git
