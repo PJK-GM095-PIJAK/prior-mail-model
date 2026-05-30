@@ -23,19 +23,20 @@ passing gates below.
 ## Evaluation
 - **Test set:** held-out stratified 15% (2,022 emails), fixed split, never seen
   in training (`data/processed/priority` → `test`).
-- **Macro F1: 0.989** (gate ≥ 0.80 ✅)
-- **Per-class recall** (gate ≥ 0.65 ✅, all pass):
+- **Macro F1: 0.988** on the test set (gate ≥ 0.80 ✅)
+- **Per-class recall** on the test set (gate ≥ 0.65 ✅, all pass):
 
-  | class | recall (val) |
+  | class | recall (test) |
   |---|---|
   | urgent | 0.997 |
-  | high | 0.979 |
-  | normal | 0.994 |
+  | high | 0.985 |
+  | normal | 0.982 |
   | low | 0.991 |
 
-- **Inference latency p95: 167 ms** per email on CPU (gate < 500 ms ✅, measured
-  over 200 test emails on a Colab CPU as a Render proxy).
-- Full metrics + confusion matrix: `eval/results/priority/eval_report.json`.
+- **Inference latency p95: 52 ms** per email on CPU (gate < 500 ms ✅, measured
+  over 200 test emails on a local CPU as a Render proxy).
+- Full metrics + confusion matrix: `eval/results/priority/eval_report.json`
+  (regenerated from this checkpoint at SHA 0a3fca5).
 
 ## Known limitations
 - Trained on **English topical-folder data**, not Indonesian work email — the
@@ -51,15 +52,12 @@ passing gates below.
 N/A — this is the priority classifier (argmax over 4 classes, no threshold).
 
 ## Trained by
-Insan, 2026-05-30 (~01:45 WIB), on Google Colab (T4 GPU, wandb offline).
-git SHA: **unknown** — the Colab session was recycled before the SHA was
-captured, and training (~01:45) predates all current commits (earliest 05:36),
-so the exact code state cannot be reconstructed. wandb run:
-offline-run-20260530_014553-zrld2xgv.
-Base model: `indobenchmark/indobert-base-p1` · config: `configs/priority_baseline.yaml`
+Insan, 2026-05-30 (re-train, 04:09 WIB), on Google Colab (T4 GPU, wandb offline).
+git SHA: **0a3fca5** (clean tree — `_git_dirty: false`, auto-recorded in
+`training_config.yaml`). Base model: `indobenchmark/indobert-base-p1` · config:
+`configs/priority_baseline.yaml`.
 
-> ⚠️ **Provenance gap (reproducibility, ML_PIPELINE.md §8):** this artifact was
-> trained from an uncaptured code state. It is fine as an exploratory baseline,
-> but **before any real release this model should be RE-TRAINED from a known,
-> committed SHA** so the run is reproducible. Future runs will record the SHA
-> automatically (train_priority.py writes it into training_config.yaml).
+> ✅ **Reproducible:** this checkpoint was trained from the committed SHA `0a3fca5`
+> on a clean tree (the earlier provenance gap is resolved by this re-train).
+> Re-running `make data && make train` at that SHA reproduces the run within the
+> §8 tolerance, modulo GPU nondeterminism.
