@@ -20,6 +20,8 @@ dependencies = [
     "accelerate",
     "evaluate",
     "wandb",
+    # Required to load IndoBERT's tokenizer (slow->fast conversion).
+    "sentencepiece",
     # Data tooling
     "pandas",
     "scikit-learn",
