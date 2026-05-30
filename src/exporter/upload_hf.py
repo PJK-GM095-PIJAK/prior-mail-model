@@ -92,6 +92,10 @@ def upload(
     if not files:
         raise FileNotFoundError(f"No files to upload in {packaged_dir}")
 
+    # The Xet backend can stall silently on large single files; classic LFS is
+    # slower but reliable. Default it off unless the caller explicitly opts in.
+    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
     api.create_repo(repo_id=repo, repo_type="model", private=private, exist_ok=True)
     api.upload_folder(
         repo_id=repo,
