@@ -54,8 +54,11 @@ def append_internal_to_train(splits, internal):
         return splits
     from datasets import concatenate_datasets
 
+    train = splits["train"].select_columns(SPLIT_COLUMNS)
     internal = internal.select_columns(SPLIT_COLUMNS)
-    splits["train"] = concatenate_datasets([splits["train"].select_columns(SPLIT_COLUMNS), internal])
+    # Align Arrow feature types (e.g. string vs large_string) so concat succeeds.
+    internal = internal.cast(train.features)
+    splits["train"] = concatenate_datasets([train, internal])
     return splits
 
 

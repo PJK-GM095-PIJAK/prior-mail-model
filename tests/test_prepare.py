@@ -54,3 +54,27 @@ def test_none_internal_is_noop():
     )
     out = append_internal_to_train(splits, None)
     assert out["train"]["body"] == ["a"]
+
+
+def test_merge_aligns_mismatched_arrow_types():
+    # Regression: public `subject` is large_string, synthetic is string —
+    # concat must still succeed (we cast internal to the train features).
+    from datasets import Features, Value
+
+    large = Features(
+        {
+            "id": Value("string"),
+            "subject": Value("large_string"),
+            "body": Value("large_string"),
+            "priority": Value("string"),
+            "labels": Value("int64"),
+        }
+    )
+    train = _split(["pub1"]).cast(large)
+    splits = DatasetDict(
+        {"train": train, "validation": _split(["v"]), "test": _split(["t"])}
+    )
+    internal = _split(["int1"])  # plain string features
+
+    out = append_internal_to_train(splits, internal)  # must not raise
+    assert set(out["train"]["body"]) == {"pub1", "int1"}
