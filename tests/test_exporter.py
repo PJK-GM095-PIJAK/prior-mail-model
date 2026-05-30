@@ -111,3 +111,59 @@ def test_upload_new_version_writes_all_files(tmp_path):
     # every file went under the right prefix
     assert all(p.startswith("priority/v1.0/") for p in client.storage._bucket.uploaded)
     assert "priority/v1.0/model.safetensors" in client.storage._bucket.uploaded
+
+
+# --- HuggingFace Hub uploader (interim path) ------------------------------
+
+
+def test_hf_repo_id():
+    from src.exporter.upload_hf import repo_id
+
+    assert repo_id("priority", "PJK-GM095") == "PJK-GM095/priormail-priority"
+
+
+def test_hf_repo_id_rejects_bad():
+    import pytest
+    from src.exporter.upload_hf import repo_id
+
+    with pytest.raises(ValueError):
+        repo_id("summarizer", "org")
+    with pytest.raises(ValueError):
+        repo_id("priority", "")
+
+
+class _FakeHfApi:
+    def __init__(self, existing_files=None):
+        self._files = existing_files or []
+        self.created = None
+        self.uploaded_folder = None
+
+    def list_repo_files(self, repo_id, repo_type):
+        return self._files
+
+    def create_repo(self, repo_id, repo_type, private, exist_ok):
+        self.created = (repo_id, private)
+
+    def upload_folder(self, repo_id, repo_type, folder_path, path_in_repo, commit_message):
+        self.uploaded_folder = (repo_id, path_in_repo)
+
+
+def test_hf_upload_refuses_existing_version(tmp_path):
+    import pytest
+    from src.exporter.upload_hf import upload
+
+    _make_checkpoint(tmp_path)
+    api = _FakeHfApi(existing_files=["v1.0/model.safetensors"])
+    with pytest.raises(FileExistsError):
+        upload(tmp_path, "priority", "v1.0", "PJK-GM095", api=api)
+
+
+def test_hf_upload_new_version(tmp_path):
+    from src.exporter.upload_hf import upload
+
+    _make_checkpoint(tmp_path)
+    api = _FakeHfApi(existing_files=[])
+    uri = upload(tmp_path, "priority", "v1.0", "PJK-GM095", api=api)
+    assert uri == "hf://PJK-GM095/priormail-priority/v1.0"
+    assert api.created == ("PJK-GM095/priormail-priority", True)
+    assert api.uploaded_folder == ("PJK-GM095/priormail-priority", "v1.0")

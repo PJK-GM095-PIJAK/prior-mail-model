@@ -32,6 +32,8 @@ dependencies = [
     "pyyaml",
     # Storage (checkpoint publishing)
     "supabase",
+    # Interim model host (free-tier Supabase can't hold ~475MB checkpoints).
+    "huggingface-hub",
 ]
 
 [project.optional-dependencies]

@@ -92,24 +92,40 @@ def _main() -> None:
     parser.add_argument("--checkpoint", required=True, help="path to a checkpoint directory")
     parser.add_argument("--phishing", action="store_true", help="checkpoint is the phishing model")
     parser.add_argument("--dist", default=None, help="output directory (default: <checkpoint>/dist)")
-    parser.add_argument("--upload", action="store_true", help="upload the package to Supabase")
-    parser.add_argument("--version", default=None, help="version string, e.g. v1.0 (with --upload)")
+    parser.add_argument("--upload", action="store_true", help="upload to Supabase (§6 contract host)")
+    parser.add_argument(
+        "--hf-org", default=None,
+        help="upload to HuggingFace Hub under this org/user instead of Supabase "
+        "(interim path — free-tier Supabase can't hold large checkpoints)",
+    )
+    parser.add_argument("--version", default=None, help="version string, e.g. v1.0 (with upload)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     is_phishing = bool(args.phishing)
     dist = Path(args.dist) if args.dist else None
     packaged = package_checkpoint(Path(args.checkpoint), is_phishing=is_phishing, dist_dir=dist)
+    model_name = "phishing" if is_phishing else "priority"
+
+    if args.upload and args.hf_org:
+        parser.error("choose one host: --upload (Supabase) OR --hf-org (HuggingFace), not both")
 
     if args.upload:
         if not args.version:
             parser.error("--upload requires --version (e.g. --version v1.0)")
         from src.exporter.upload_supabase import upload
 
-        model_name = "phishing" if is_phishing else "priority"
         uri = upload(packaged, model_name, args.version)
         logger.info("Published. Backend pins to: %s", uri)
         logger.info("NOTE: uploading is NOT promotion — updating the backend env var is separate.")
+    elif args.hf_org:
+        if not args.version:
+            parser.error("--hf-org requires --version (e.g. --version v1.0)")
+        from src.exporter.upload_hf import upload as hf_upload
+
+        uri = hf_upload(packaged, model_name, args.version, args.hf_org)
+        logger.info("Published (interim host). Reference: %s", uri)
+        logger.info("NOTE: hf:// diverges from the §6 Supabase contract — coordinate with Syafiq.")
 
 
 if __name__ == "__main__":
