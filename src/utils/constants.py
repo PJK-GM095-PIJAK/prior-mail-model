@@ -30,3 +30,10 @@ MAX_SEQ_LENGTH: int = 512
 # Placeholder tokens injected during preprocessing (ML_PIPELINE.md §2).
 URL_TOKEN: str = "[URL]"
 EMAIL_TOKEN: str = "[EMAIL]"
+
+# PII redaction tokens (ML_PIPELINE.md §7). Redaction is destructive and must be
+# reviewed by a second team member before any real email is committed.
+NAME_TOKEN: str = "[NAMA]"
+PHONE_TOKEN: str = "[TELEPON]"
+ADDRESS_TOKEN: str = "[ALAMAT]"
+NUMBER_TOKEN: str = "[NOMOR]"
