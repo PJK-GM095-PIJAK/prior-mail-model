@@ -89,22 +89,25 @@ HF_PRIORITY_DATA_FILES = {"train": "train.csv", "test": "test.csv"}
 SOURCE_LABEL_COLUMN = "category"
 
 
-def load_priority_dataset():
+def load_priority_dataset(include_internal: bool = True):
     """Load the public priority-classifier dataset with mapped 4-class labels.
 
     Adds a ``priority`` column (one of PRIORITY_LABELS) and a ``labels`` column
     (its integer id, for the model head) derived from the source ``category``.
 
+    Args:
+        include_internal: if True, also fold the internal Indonesian labeled set
+            (ML_PIPELINE.md §7) into the ``train`` split when any labeled files
+            exist. The ``test`` split is left untouched so the held-out public
+            benchmark stays comparable across runs (§2). No-ops cleanly when the
+            internal set is empty.
+
     Returns:
         A HuggingFace ``DatasetDict`` with ``train`` and ``test`` splits.
-
-    Note:
-        This is only the public bootstrap signal. The internal Indonesian
-        labeled set (ML_PIPELINE.md §7) is merged in separately for domain
-        adaptation — not handled here yet.
     """
-    from datasets import load_dataset
+    from datasets import concatenate_datasets, load_dataset
 
+    from src.data.labeled import load_labeled_dataset
     from src.utils.constants import PRIORITY_LABEL2ID
 
     ds = load_dataset(HF_PRIORITY_DATASET, data_files=HF_PRIORITY_DATA_FILES)
@@ -115,6 +118,17 @@ def load_priority_dataset():
 
     ds = ds.map(_add_labels)
     logger.info("Loaded %s with mapped 4-class labels: %s", HF_PRIORITY_DATASET, ds)
+
+    if include_internal:
+        internal = load_labeled_dataset()
+        if internal is not None:
+            # Align columns: keep only what both share + the pipeline needs.
+            common = ["subject", "body", "priority", "labels"]
+            pub_train = ds["train"].select_columns(common)
+            internal = internal.select_columns(common)
+            ds["train"] = concatenate_datasets([pub_train, internal])
+            logger.info("Merged %d internal records into train (now %d).", internal.num_rows, ds["train"].num_rows)
+
     return ds
 
 
