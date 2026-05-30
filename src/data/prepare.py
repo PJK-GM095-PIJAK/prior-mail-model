@@ -62,17 +62,26 @@ def append_internal_to_train(splits, internal):
     return splits
 
 
-def prepare_priority(seed: int = DEFAULT_SEED, output_dir: Path = DEFAULT_OUTPUT):
+def prepare_priority(
+    seed: int = DEFAULT_SEED, output_dir: Path = DEFAULT_OUTPUT, dataset: str | None = None
+):
     """Run the full priority data pipeline and save the result. Returns the splits.
 
     Internal labeled records (§7) are appended to the TRAIN split only — they are
     never pooled into the public re-split, so validation/test stay leak-free.
+
+    Args:
+        dataset: HF dataset id to build from. ``None`` uses the loader default
+            (English original). Pass the Indonesian id for a v1.1 build.
     """
     from datasets import concatenate_datasets
 
     # Public set only — internal data is excluded here so it can't leak into the
     # re-split that produces validation/test.
-    ds = load_priority_dataset(include_internal=False)
+    load_kwargs = {"include_internal": False}
+    if dataset is not None:
+        load_kwargs["dataset"] = dataset
+    ds = load_priority_dataset(**load_kwargs)
 
     # Re-split the public data from scratch into train/val/test.
     pooled = concatenate_datasets([ds[split].select_columns(SPLIT_COLUMNS) for split in ds])
@@ -101,12 +110,23 @@ def prepare_priority(seed: int = DEFAULT_SEED, output_dir: Path = DEFAULT_OUTPUT
 
 
 def _main() -> None:
+    from src.data.loaders import HF_PRIORITY_DATASET_ID
+
     parser = argparse.ArgumentParser(description="Prepare the priority dataset (make data)")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="fixed split seed")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="output directory")
+    parser.add_argument(
+        "--dataset", default=None,
+        help=f"HF dataset id (default: English original; Indonesian: {HF_PRIORITY_DATASET_ID})",
+    )
+    parser.add_argument(
+        "--indonesian", action="store_true",
+        help="shortcut for --dataset " + HF_PRIORITY_DATASET_ID,
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    prepare_priority(seed=args.seed, output_dir=args.output)
+    dataset = HF_PRIORITY_DATASET_ID if args.indonesian else args.dataset
+    prepare_priority(seed=args.seed, output_dir=args.output, dataset=dataset)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,38 @@
+# Priority classifier — v1.1 (Indonesian).
+# Same locked protocol as priority_baseline.yaml (ML_PIPELINE.md §2), but trained
+# on the INDONESIAN translation of the dataset for domain match. v1.0 (English)
+# stays published and untouched; this produces a new, separate version.
+
+model_type: priority
+model_name: indobenchmark/indobert-base-p1   # LOCKED base model
+
+# Indonesian translation (same category schema as the English original, so the
+# class mapping in src/data/loaders.py applies unchanged).
+dataset: chairulridjal/high-accuracy-email-classifier-indonesian
+
+num_labels: 4
+
+hyperparameters:
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  batch_size: 16
+  gradient_accumulation_steps: 1
+  num_epochs: 4
+  warmup_ratio: 0.10
+  lr_scheduler_type: linear
+  max_seq_length: 512
+  early_stopping_metric: macro_f1
+  early_stopping_patience: 2
+  class_weights: balanced
+  mixed_precision: bf16
+
+seed: 42
+
+# Separate output dir so it never overwrites the v1.0 checkpoint.
+output_dir: checkpoints/priority_v1
+
+wandb:
+  project: priormail
+  tags:
+    - model:priority
+    - stage:prod-candidate

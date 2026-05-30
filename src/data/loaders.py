@@ -83,14 +83,17 @@ def map_to_priority(source_label: str) -> str:
         ) from None
 
 
+# Default (v1.0): the original English dataset. The Indonesian translation
+# (chairulridjal/...-indonesian) shares the exact schema, so it's a drop-in via
+# the ``dataset`` arg. Both are loose-CSV repos (no datasets config).
 HF_PRIORITY_DATASET = "jason23322/high-accuracy-email-classifier"
-# Loose-CSV repo (no datasets config) — load the split files explicitly.
+HF_PRIORITY_DATASET_ID = "chairulridjal/high-accuracy-email-classifier-indonesian"
 HF_PRIORITY_DATA_FILES = {"train": "train.csv", "test": "test.csv"}
 SOURCE_LABEL_COLUMN = "category"
 
 
-def load_priority_dataset(include_internal: bool = True):
-    """Load the public priority-classifier dataset with mapped 4-class labels.
+def load_priority_dataset(include_internal: bool = True, dataset: str = HF_PRIORITY_DATASET):
+    """Load a public priority-classifier dataset with mapped 4-class labels.
 
     Adds a ``priority`` column (one of PRIORITY_LABELS) and a ``labels`` column
     (its integer id, for the model head) derived from the source ``category``.
@@ -101,6 +104,9 @@ def load_priority_dataset(include_internal: bool = True):
             exist. The ``test`` split is left untouched so the held-out public
             benchmark stays comparable across runs (§2). No-ops cleanly when the
             internal set is empty.
+        dataset: HF dataset id. Defaults to the English original; pass
+            ``HF_PRIORITY_DATASET_ID`` for the Indonesian translation. Both share
+            the same ``category`` schema, so the class mapping applies unchanged.
 
     Returns:
         A HuggingFace ``DatasetDict`` with ``train`` and ``test`` splits.
@@ -110,7 +116,7 @@ def load_priority_dataset(include_internal: bool = True):
     from src.data.labeled import load_labeled_dataset
     from src.utils.constants import PRIORITY_LABEL2ID
 
-    ds = load_dataset(HF_PRIORITY_DATASET, data_files=HF_PRIORITY_DATA_FILES)
+    ds = load_dataset(dataset, data_files=HF_PRIORITY_DATA_FILES)
 
     def _add_labels(row: dict) -> dict:
         priority = map_to_priority(row[SOURCE_LABEL_COLUMN])
