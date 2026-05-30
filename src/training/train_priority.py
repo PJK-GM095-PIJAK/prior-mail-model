@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from src.utils.config import TrainingConfig
@@ -177,7 +178,15 @@ def train(config: TrainingConfig) -> None:
     # Copy the exact config next to the checkpoint (reproducibility, §5/§8).
     config_path = config.extra.get("_config_path")
     if config_path:
-        (out / "training_config.yaml").write_text(Path(config_path).read_text())
+        # Copy the config and append a provenance block so the run is always
+        # reproducible (ML_PIPELINE.md §8) — no manual SHA lookup needed later.
+        provenance = (
+            "\n# --- run provenance (auto-recorded) ---\n"
+            f"_git_sha: {sha}\n"
+            f"_git_dirty: {is_working_tree_dirty()}\n"
+            f"_trained_at: {datetime.now().isoformat(timespec='seconds')}\n"
+        )
+        (out / "training_config.yaml").write_text(Path(config_path).read_text() + provenance)
     val_metrics = trainer.evaluate()
     (out / "val_metrics.json").write_text(json.dumps(val_metrics, indent=2))
     logger.info("Done. Best-model val metrics: %s", val_metrics)
