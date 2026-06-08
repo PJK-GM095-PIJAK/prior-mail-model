@@ -1,7 +1,7 @@
 [project]
 name = "prior-mail-model"
 version = "0.1.0"
-description = "PriorMail ML: IndoBERT fine-tuning for email priority + phishing classification"
+description = "PriorMail ML: DistilBERT fine-tuning for email priority + phishing classification"
 readme = "README.md"
 # Tech Stack is LOCKED to Python 3.11 (CLAUDE.md §4). Do not widen without proposing.
 requires-python = ">=3.11,<3.12"
@@ -20,8 +20,6 @@ dependencies = [
     "accelerate",
     "evaluate",
     "wandb",
-    # Required to load IndoBERT's tokenizer (slow->fast conversion).
-    "sentencepiece",
     # Data tooling
     "pandas",
     "scikit-learn",

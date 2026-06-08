@@ -129,11 +129,11 @@ prior-mail-model/
 ├── pyproject.toml
 ├── docs/                      ← submodule → prior-mail-docs
 ├── src/
-│   ├── data/                  ← loaders, cleaners, augmenters
+│   ├── data/                  ← loaders, cleaners, prepare
 │   │   ├── loaders.py
 │   │   ├── preprocess.py
-│   │   ├── augment.py
-│   │   └── splits.py
+│   │   ├── prepare.py
+│   │   └── augment.py
 │   ├── training/              ← training scripts (one per model)
 │   │   ├── train_priority.py
 │   │   └── train_phishing.py
@@ -151,7 +151,7 @@ prior-mail-model/
 │   └── README.md              ← naming convention
 ├── configs/                   ← YAML / TOML training configs
 │   ├── priority_baseline.yaml
-│   ├── priority_v1.yaml
+│   ├── priority_v2.yaml
 │   └── phishing_v1.yaml
 ├── data/                      ← gitignored
 │   ├── raw/
@@ -195,17 +195,15 @@ prior-mail-model/
 
 | Dataset | Use | Source |
 |---|---|---|
-| `jason23322/high-accuracy-email-classifier` | Priority classifier — English source (baseline signal) | HuggingFace |
-| `insanar/prior-mail-priority` | **Team-curated priority dataset** — English, priority-labelled; canonical training source | HuggingFace (published by Insan) |
+| `jason23322/high-accuracy-email-classifier` | Priority classifier — original English topical source; now folded into the curated dataset (historical) | HuggingFace |
+| `insanar/prior-mail-priority` | **Team-curated priority dataset** — English; direct 4-class labels + built-in train/val/test splits. Canonical training source (config `v2`) | HuggingFace (published by Insan) |
 | `ealvaradob/phishing-dataset` | Phishing detector primary training set | HuggingFace |
 
-> **`insanar/prior-mail-priority`** is the canonical dataset for the priority classifier. Use `load_dataset("insanar/prior-mail-priority")` in `src/data/loaders.py`. It supersedes `jason23322/high-accuracy-email-classifier` for any new training run.
+> **`insanar/prior-mail-priority`** is the canonical dataset for the priority classifier. Load it via `load_dataset("insanar/prior-mail-priority", "v2")` in `src/data/loaders.py`. It carries direct 4-class labels and its own splits, so no category→priority mapping or re-split is needed. It supersedes `jason23322/high-accuracy-email-classifier` (now folded in upstream).
 
-### Labeling protocol (internal set)
-- Annotation guidelines in `./docs/ML_PIPELINE.md` (section: Labeling) — or `./docs_local/` while the submodule is sparse
-- 2 annotators per email; resolve disagreements in a weekly sync
-- Track inter-annotator agreement (Cohen's kappa target: ≥ 0.7)
-- Store labels in `data/labeled/<batch>.jsonl` (gitignored); published version lives at `insanar/prior-mail-priority`
+### Labeling protocol (upstream)
+- The curated set — public topical data mapped to priority, plus synthetic and internally-labelled records — is assembled **outside this repo** and published as `insanar/prior-mail-priority` (see its `label_source` column: `hf_dataset` | `synthetic`).
+- The in-repo labeling toolchain (internal-set loader, synthetic generator, inter-annotator agreement, PII redaction) was removed once the dataset became canonical; recover it from git history if a new labeling round is needed.
 
 ### Privacy
 - **Never** commit raw user emails to git

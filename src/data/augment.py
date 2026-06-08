@@ -1,4 +1,4 @@
-"""Optional data augmentation for the Indonesian work-email domain.
+"""Optional data augmentation for the email-priority domain.
 
 Not in the locked training protocol yet — kept as a stub so augmentation
 experiments have a home. Any augmentation used in a promoted run must be

@@ -62,25 +62,6 @@ def test_build_priority_input_format() -> None:
     assert out == f"Subject here {SEP} Body here"
 
 
-def test_stratified_split_shapes_and_reproducibility() -> None:
-    from datasets import Dataset
-    from src.data.splits import stratified_split
-
-    # 1000 rows, 4 imbalanced classes.
-    labels = ([0] * 100) + ([1] * 200) + ([2] * 300) + ([3] * 400)
-    ds = Dataset.from_dict({"labels": labels, "x": list(range(len(labels)))})
-
-    s1 = stratified_split(ds, seed=42)
-    assert set(s1) == {"train", "validation", "test"}
-    assert s1["train"].num_rows == 700
-    assert s1["validation"].num_rows == 150
-    assert s1["test"].num_rows == 150
-
-    # Same seed -> identical split (fixed split, reused across runs — §2).
-    s2 = stratified_split(ds, seed=42)
-    assert s1["test"]["x"] == s2["test"]["x"]
-
-
 def test_build_phishing_input_keeps_sender_unmasked() -> None:
     out = build_phishing_input("attacker@evil.com", "Hi", "Body")
     # Sender carries signal — it must NOT be masked to [EMAIL].

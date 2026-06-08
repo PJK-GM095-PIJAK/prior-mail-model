@@ -1,8 +1,9 @@
 # Phishing Detector — Build Guide
 
 > Handoff for whoever builds the phishing model (Faiz, per CLAUDE.md §15). The
-> **priority classifier is done end-to-end** (v1.0 English, v1.1 Indonesian, both
-> published to HF). The phishing detector follows the same pipeline, with the
+> **priority classifier is done end-to-end** (v1.x IndoBERT published to HF; now
+> migrated to DistilBERT on the curated dataset for the v2.0 lineage). The phishing
+> detector follows the same pipeline, with the
 > §3-specific differences called out below. This doc lives in `docs_local/` — it
 > is OUR working note, not the shared `docs/` submodule (that's upstream-owned).
 
@@ -24,7 +25,7 @@ The priority work left a lot you can lean on:
 | `build_phishing_input()` | `src/data/preprocess.py` | The §3 input format `FROM: … [SEP] SUBJECT: … [SEP] BODY: …` — already implemented + tested. Sender is intentionally NOT masked (carries signal). |
 | `PHISHING_LABELS`, `PHISHING_LABEL2ID` | `src/utils/constants.py` | `("legit", "phishing")`, phishing = index 1. |
 | `clean_text()` | `src/data/preprocess.py` | HTML strip, URL/email masking — same cleaning as priority. |
-| `stratified_split()` | `src/data/splits.py` | Reuse as-is for train/val/test. |
+| Stratified split | `datasets` `Dataset.train_test_split(stratify_by_column=...)` | The old `src/data/splits.py` helper was removed in the priority/DistilBERT migration (priority now uses the dataset's built-in splits). If `ealvaradob/phishing-dataset` ships no splits, do a stratified `train_test_split` directly. |
 | Export + HF upload | `src/exporter/` | `export.py` already knows phishing needs `threshold.json` (`PHISHING_ONLY`). `upload_hf.py` handles `priormail-phishing`. Pass `--phishing` to the CLI. |
 | Training skeleton | `src/training/train_priority.py` | Copy its structure (config-driven, seeded, SHA-stamped, wandb, weighted CE, early stopping). |
 | Eval skeleton | `src/eval/eval_priority.py` + `benchmarks.py` | Copy the gate-checking + latency pattern. |
@@ -38,13 +39,12 @@ stubbed in `eval_phishing.py`.
 
 These aren't coding choices; discuss with Insan and record in the config/PR.
 
-1. **Base model (§11): IndoBERT vs multilingual BERT.**
-   - The phishing dataset (`ealvaradob/phishing-dataset`) is **English-heavy**.
-     IndoBERT is Indonesian-pretrained and may underperform on English phishing.
-   - Options: `indobenchmark/indobert-base-p1` (consistency with priority) vs
-     `bert-base-multilingual-cased` (handles English + Indonesian).
-   - **Recommendation to evaluate:** try multilingual first given the data, but
-     confirm with Insan — it diverges from the LOCKED priority base model.
+1. **Base model (§11/§14): `distilbert-base-uncased` vs `distilbert-base-multilingual-cased`.**
+   - The phishing dataset (`ealvaradob/phishing-dataset`) is **English-heavy**, so
+     `distilbert-base-uncased` (matching the migrated priority model) is the natural
+     default. `ML_PIPELINE.md` §3 records DistilBERT as the decision; IndoBERT was dropped.
+   - Use `distilbert-base-multilingual-cased` only if you need broader language
+     coverage — confirm with Insan and record the choice in the config.
 2. **Negative (legit) class source.** The dataset is phishing-positive-heavy.
    §3 says use "public corporate email corpora" for legit examples. Decide which.
 3. **Class imbalance handling (§11).** Weighted CE (as priority does) vs focal
@@ -77,8 +77,8 @@ Persist it as `threshold.json` and APPLY it at inference — the backend reads i
    `PHISHING_LABEL2ID`. Inspect it first in a notebook (`notebooks/NN_phishing_overview.ipynb`)
    like we did for priority — check columns, label balance, language mix.
 3. **Prepare** — either extend `src/data/prepare.py` or add `prepare_phishing()`.
-   Build `model_input` via `build_phishing_input()`. Stratified split (reuse).
-4. **Config** — `configs/phishing_v1.yaml`. Copy `priority_v1.yaml`'s shape; set
+   Build `model_input` via `build_phishing_input()`. Stratified split (see §1).
+4. **Config** — `configs/phishing_v1.yaml`. Copy `priority_v2.yaml`'s shape; set
    `model_type: phishing`, `num_labels: 2`, the chosen base model, heavy phishing
    class weight. (See `docs/ML_PIPELINE.md` §3 training protocol.)
 5. **Train** — fill `src/training/train_phishing.py`. Copy `train_priority.py`'s
@@ -98,8 +98,9 @@ Persist it as `threshold.json` and APPLY it at inference — the backend reads i
 Identical to the priority Colab run, just swap the config. Key gotchas already
 solved (don't re-learn them the hard way):
 - Set **Runtime → T4 GPU**; confirm `torch.cuda.is_available()`.
-- `pip install` the libs directly (incl. **`sentencepiece`**); use `PYTHONPATH=.`
-  (don't `pip install -e .` — the Python 3.11 pin conflicts with Colab's 3.12).
+- `pip install` the libs directly; use `PYTHONPATH=.` (don't `pip install -e .` —
+  the Python 3.11 pin conflicts with Colab's 3.12). DistilBERT uses a WordPiece
+  tokenizer, so `sentencepiece` is no longer needed.
 - **`%env WANDB_MODE=offline`** on its own line, NO trailing comment (a comment
   breaks it — cost us an hour).
 - `git checkout <SHA>` to pin a reproducible commit (the run auto-records it).
@@ -121,5 +122,5 @@ hit the same wall. Use `--hf-org` to publish to HF for now.
 
 ---
 
-*Reference implementation: the priority classifier (`*_priority.py`, `configs/priority_v1.yaml`,
-`model_cards/priority_v1.1.md`). When in doubt, copy what it does and adapt per §3.*
+*Reference implementation: the priority classifier (`*_priority.py`, `configs/priority_v2.yaml`,
+`model_cards/`). When in doubt, copy what it does and adapt per §3.*

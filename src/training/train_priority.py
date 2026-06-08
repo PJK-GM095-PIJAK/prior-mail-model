@@ -1,4 +1,4 @@
-"""Fine-tune IndoBERT for 4-class email priority classification.
+"""Fine-tune DistilBERT for 4-class email priority classification.
 
 Driven entirely by a YAML config (CLAUDE.md §6). Protocol locked in
 ML_PIPELINE.md §2: AdamW lr 2e-5, wd 0.01, linear warmup 10% + decay,

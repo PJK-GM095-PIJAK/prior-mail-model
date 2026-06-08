@@ -12,22 +12,28 @@
 currently.** Free-tier Supabase caps Storage uploads at 50MB; our checkpoint is
 ~475MB. So the models are published to the **HuggingFace Hub** instead:
 
-| Model | Version | Location |
-|---|---|---|
-| priority (English) | v1.0 | `hf://insanar/priormail-priority/v1.0` |
-| priority (Indonesian) | **v1.1** | `hf://insanar/priormail-priority/v1.1` ← use this |
+| Model | Version | Base | Location |
+|---|---|---|---|
+| priority (English topical proxy) | v1.0 | IndoBERT | `hf://insanar/priormail-priority/v1.0` |
+| priority (Indonesian) | v1.1 | IndoBERT | `hf://insanar/priormail-priority/v1.1` |
+| priority (English, curated dataset) | **v2.0** | DistilBERT | _in progress — not yet published_ |
 
-**This is an unresolved contract decision.** Three options — pick one with the team:
+> **Migration in progress.** The repo now fine-tunes **DistilBERT** on the curated
+> `insanar/prior-mail-priority` dataset (English, direct 4-class labels). That is the
+> **v2.0** lineage and the target going forward — but it is **not published yet** (a
+> training run is pending). Until v2.0 ships, **`v1.1` (IndoBERT) is the newest
+> loadable checkpoint**; the load steps below apply unchanged when v2.0 lands.
+
+**Storage is also an unresolved contract decision.** Three options — pick one with the team:
 1. Backend loads from HF (this guide shows how — easiest, no cost), or
 2. Upgrade Supabase to Pro ($25/mo) and re-upload there to honor §6 as written, or
 3. Quantize the model under 50MB.
 
 Until decided, treat the env var as e.g. `PRIORITY_MODEL_URI=hf://insanar/priormail-priority/v1.1`.
 
-> **Neither version is "promoted."** Both are baselines trained on a topic→priority
-> *proxy* (not true urgency). Wiring them up for testing is fine; pointing
-> production traffic at them is a deliberate team call (§11). v1.1 is the better
-> choice (Indonesian); v1.0 is English.
+> **No version is "promoted."** The v1.x baselines are trained on a topic→priority
+> *proxy* (not true urgency). Wiring them up for testing is fine; pointing production
+> traffic at any version is a deliberate team call (§11).
 
 ---
 
@@ -127,11 +133,13 @@ Measured p95 latency is ~50ms/email on CPU (well under the 500ms budget), so it
 runs fine on Render's CPU instances. Batch if you process many at once.
 
 ## 7. Honest caveats (from the model card — don't skip)
-- The model judges **topic→priority on Indonesian text**, NOT true urgency. It
-  classifies "OTP code vs promo" well; real work-email urgency is unvalidated.
-- It's trained on *translated* English emails, not native Indonesian work mail.
-- Treat its output as a useful signal, not ground truth — and expect to retrain
-  on real labeled data (the §7 pipeline exists for this) before it's production-grade.
+- The published **v1.x** models judge **topic→priority** (e.g. "OTP code vs promo"),
+  NOT true urgency — v1.0 on English, v1.1 on Indonesian translated text.
+- **v2.0** (DistilBERT) trains on the curated `insanar/prior-mail-priority` set: native
+  English with direct priority labels (incl. synthetic urgency examples), but still
+  leans topic→priority rather than fully validated urgency.
+- Treat the output as a useful signal, not ground truth — expect to retrain on more
+  real labeled data before it's production-grade.
 
 ---
 

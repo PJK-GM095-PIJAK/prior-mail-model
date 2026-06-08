@@ -1,3 +1,17 @@
 # PriorMail Model
 
-This repository contains the code for the PriorMail model, which is designed for email classification tasks based on their priority. The model utilizes a combination of natural language processing techniques and machine learning algorithms to classify emails into various categories such as spam, promotions, social, and primary.
+The **machine learning** repo of PriorMail. It fine-tunes **DistilBERT** for two email tasks:
+
+- **Priority classification** — 4 classes (`urgent`, `high`, `normal`, `low`), trained on the team-curated `insanar/prior-mail-priority` dataset.
+- **Phishing detection** — binary (in progress).
+
+Trained checkpoints are consumed by `prior-mail-backend` at inference time. See [CLAUDE.md](CLAUDE.md) for the full pipeline, datasets, and evaluation gates.
+
+## Quick start
+
+```bash
+make install                                # install deps via uv
+make data                                   # download + preprocess the priority dataset
+make train config=configs/priority_v2.yaml  # fine-tune
+make eval  config=configs/priority_v2.yaml  # run the eval gates
+```

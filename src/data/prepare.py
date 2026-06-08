@@ -2,18 +2,13 @@
 
 This is the entry point behind ``make data``. It chains the data-layer pieces:
 
-    load (loaders) -> pool both upstream splits -> clean + build model input
-    (preprocess) -> stratified 70/15/15 split (splits) -> save to data/processed/
+    load (loaders) -> build model input (preprocess) -> save to data/processed/
 
-We re-split from scratch (ML_PIPELINE.md §2): the upstream train/test boundary is
-discarded so we get a fixed, stratified, reproducible split *with* a validation
-set (the protocol needs one for early stopping on macro F1).
-
-The internal Indonesian labeled set (§7) is handled deliberately to AVOID
-LEAKAGE: only the public set is pooled + re-split into train/val/test, and
-internal records are appended to the resulting **train** split afterwards. They
-never enter validation or test, so the held-out benchmark stays clean and
-comparable across runs.
+The priority dataset (``insanar/prior-mail-priority``) already ships fixed,
+versioned ``train/validation/test`` splits and direct 4-class labels, so this
+step does NOT re-split: it honors the published splits as-is (re-splitting would
+mix the dataset's synthetic rows into the held-out test set). All we add is the
+cleaned ``model_input`` string the model actually consumes.
 
 Output: a saved HuggingFace ``DatasetDict`` at ``data/processed/priority/`` with
 ``train`` / ``validation`` / ``test`` splits, each carrying:
@@ -28,74 +23,38 @@ import argparse
 import logging
 from pathlib import Path
 
-from src.data.labeled import load_labeled_dataset
-from src.data.loaders import load_priority_dataset
+from src.data.loaders import HF_PRIORITY_CONFIG, load_priority_dataset
 from src.data.preprocess import build_priority_input
-from src.data.splits import stratified_split
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SEED = 42
 DEFAULT_OUTPUT = Path("data/processed/priority")
-SPLIT_COLUMNS = ["subject", "body", "priority", "labels"]
+# Columns kept in the processed set: the model input is built from subject+body;
+# subject/body/priority are retained for error analysis and eval reporting.
+KEEP_COLUMNS = ["subject", "body", "priority", "labels", "model_input"]
 
 
 def _add_model_input(row: dict) -> dict:
     return {"model_input": build_priority_input(row.get("subject"), row.get("body"))}
 
 
-def append_internal_to_train(splits, internal):
-    """Append the internal set to the TRAIN split only; leave val/test untouched.
+def prepare_priority(config: str = HF_PRIORITY_CONFIG, output_dir: Path = DEFAULT_OUTPUT):
+    """Load the priority dataset, build ``model_input``, and save it. Returns the splits.
 
-    Pulled out as a pure function so the leak-safety guarantee is unit-testable
-    without loading the public dataset. ``internal`` may be ``None`` (no-op).
-    """
-    if internal is None:
-        return splits
-    from datasets import concatenate_datasets
-
-    train = splits["train"].select_columns(SPLIT_COLUMNS)
-    internal = internal.select_columns(SPLIT_COLUMNS)
-    # Align Arrow feature types (e.g. string vs large_string) so concat succeeds.
-    internal = internal.cast(train.features)
-    splits["train"] = concatenate_datasets([train, internal])
-    return splits
-
-
-def prepare_priority(
-    seed: int = DEFAULT_SEED, output_dir: Path = DEFAULT_OUTPUT, dataset: str | None = None
-):
-    """Run the full priority data pipeline and save the result. Returns the splits.
-
-    Internal labeled records (§7) are appended to the TRAIN split only — they are
-    never pooled into the public re-split, so validation/test stay leak-free.
+    Honors the dataset's published ``train/validation/test`` splits (no re-split).
 
     Args:
-        dataset: HF dataset id to build from. ``None`` uses the loader default
-            (English original). Pass the Indonesian id for a v1.1 build.
+        config: HF dataset config to build from (default ``v2``).
+        output_dir: where to ``save_to_disk`` the processed ``DatasetDict``.
     """
-    from datasets import concatenate_datasets
+    splits = load_priority_dataset(config=config)
 
-    # Public set only — internal data is excluded here so it can't leak into the
-    # re-split that produces validation/test.
-    load_kwargs = {"include_internal": False}
-    if dataset is not None:
-        load_kwargs["dataset"] = dataset
-    ds = load_priority_dataset(**load_kwargs)
-
-    # Re-split the public data from scratch into train/val/test.
-    pooled = concatenate_datasets([ds[split].select_columns(SPLIT_COLUMNS) for split in ds])
-    logger.info("Pooled %d public examples from splits %s", pooled.num_rows, list(ds))
-    splits = stratified_split(pooled, seed=seed)
-
-    # Append the internal labeled set to TRAIN only (domain adaptation, §7).
-    internal = load_labeled_dataset()
-    if internal is not None:
-        logger.info("Appending %d internal records to train only.", internal.num_rows)
-    splits = append_internal_to_train(splits, internal)
-
-    # Build the cleaned model_input on every split AFTER assembly.
+    # Build the cleaned model_input on every split, then keep only what the
+    # trainer/eval need (drops id, label_source, source_category, labeled_at).
     splits = splits.map(_add_model_input)
+    splits = splits.remove_columns(
+        [c for c in splits["train"].column_names if c not in KEEP_COLUMNS]
+    )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     splits.save_to_disk(str(output_dir))
@@ -110,23 +69,14 @@ def prepare_priority(
 
 
 def _main() -> None:
-    from src.data.loaders import HF_PRIORITY_DATASET_ID
-
     parser = argparse.ArgumentParser(description="Prepare the priority dataset (make data)")
-    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="fixed split seed")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="output directory")
     parser.add_argument(
-        "--dataset", default=None,
-        help=f"HF dataset id (default: English original; Indonesian: {HF_PRIORITY_DATASET_ID})",
-    )
-    parser.add_argument(
-        "--indonesian", action="store_true",
-        help="shortcut for --dataset " + HF_PRIORITY_DATASET_ID,
+        "--subset", default=HF_PRIORITY_CONFIG, help="HF dataset config (default: v2)"
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    dataset = HF_PRIORITY_DATASET_ID if args.indonesian else args.dataset
-    prepare_priority(seed=args.seed, output_dir=args.output, dataset=dataset)
+    prepare_priority(config=args.subset, output_dir=args.output)
 
 
 if __name__ == "__main__":

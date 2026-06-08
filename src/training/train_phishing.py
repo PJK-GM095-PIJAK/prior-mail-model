@@ -1,4 +1,4 @@
-"""Fine-tune IndoBERT for binary phishing detection.
+"""Fine-tune DistilBERT for binary phishing detection.
 
 Same protocol as the priority classifier (ML_PIPELINE.md §3) with two
 differences: class weights heavily favor the phishing class to push recall up,

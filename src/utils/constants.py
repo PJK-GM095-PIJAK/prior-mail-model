@@ -22,7 +22,7 @@ PHISHING_LABEL2ID: dict[str, int] = {lbl: i for i, lbl in enumerate(PHISHING_LAB
 PHISHING_ID2LABEL: dict[int, str] = {i: lbl for lbl, i in PHISHING_LABEL2ID.items()}
 
 # Base model (LOCKED — CLAUDE.md §4 / ML_PIPELINE.md §2).
-BASE_MODEL_NAME: str = "indobenchmark/indobert-base-p1"
+BASE_MODEL_NAME: str = "distilbert-base-uncased"
 
 # Tokenization (ML_PIPELINE.md §2).
 MAX_SEQ_LENGTH: int = 512
@@ -30,10 +30,3 @@ MAX_SEQ_LENGTH: int = 512
 # Placeholder tokens injected during preprocessing (ML_PIPELINE.md §2).
 URL_TOKEN: str = "[URL]"
 EMAIL_TOKEN: str = "[EMAIL]"
-
-# PII redaction tokens (ML_PIPELINE.md §7). Redaction is destructive and must be
-# reviewed by a second team member before any real email is committed.
-NAME_TOKEN: str = "[NAMA]"
-PHONE_TOKEN: str = "[TELEPON]"
-ADDRESS_TOKEN: str = "[ALAMAT]"
-NUMBER_TOKEN: str = "[NOMOR]"

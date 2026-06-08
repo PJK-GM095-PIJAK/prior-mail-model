@@ -4,11 +4,12 @@
 # Commit this BEFORE running; it is how the run is reproduced.
 
 model_type: priority
-model_name: indobenchmark/indobert-base-p1   # LOCKED base model
+model_name: distilbert-base-uncased   # LOCKED base model
 
-# Dataset identifier consumed by src/data/loaders.py.
-# NOTE: the external->4-class mapping is not yet finalized (see loaders.py).
-dataset: jason23322/high-accuracy-email-classifier
+# Canonical priority dataset (src/data/loaders.py): direct 4-class labels +
+# built-in train/validation/test splits. `dataset_config` pins the HF subset.
+dataset: insanar/prior-mail-priority
+dataset_config: v2
 
 # Number of target classes — matches priority_level enum (urgent|high|normal|low).
 num_labels: 4
