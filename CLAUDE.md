@@ -8,7 +8,7 @@
 
 This is the **machine learning** repo of PriorMail. It owns:
 
-- Fine-tuning **IndoBERT** for email priority classification (4 classes)
+- Fine-tuning **DistilBERT** for email priority classification (4 classes)
 - Fine-tuning a **phishing detector** (binary)
 - Dataset preparation, augmentation, and labeling tooling
 - Evaluation pipelines and benchmark suites
@@ -41,6 +41,12 @@ git submodule update --init --recursive
 - `./docs/ML_PIPELINE.md` — model architecture, training protocol, eval gates, checkpoint format
 - `./docs/DATA_MODELS.md` — to know the exact priority enum + phishing field schema the backend expects
 - `./docs/SECURITY.md` — for handling user-derived training data
+
+> **Current status (2026-06-09):** `./docs/` only contains `README.md` — the spec files above are not yet created in `prior-mail-docs`. Use `./docs_local/` as the interim reference instead (see below).
+
+**Local interim guides (`./docs_local/`):**
+- `./docs_local/BACKEND_INTEGRATION_GUIDE.md` — how the backend loads the priority model from HuggingFace Hub
+- `./docs_local/PHISHING_MODEL_GUIDE.md` — phishing detector build guide
 
 **Updating the submodule:**
 ```bash
@@ -83,8 +89,8 @@ When uncertain — ask, don't assume:
 - **`evaluate`** — for standard metrics
 
 ### Models
-- **`indobenchmark/indobert-base-p1`** — base model for priority classifier
-- **`indobenchmark/indobert-base-p1`** or multilingual BERT — base for phishing detector (decision in `ML_PIPELINE.md`)
+- **`distilbert-base-uncased`** — base model for priority classifier (English)
+- **`distilbert-base-uncased`** or multilingual DistilBERT — base for phishing detector (decision in `ML_PIPELINE.md`)
 - Tokenizer: use the matching one from the base model, never mix
 
 ### Experiment Tracking
@@ -95,11 +101,11 @@ When uncertain — ask, don't assume:
 ### Data Tooling
 - **`pandas`** — tabular preprocessing
 - **`scikit-learn`** — train/test splits, classical baselines, metrics
-- **`langdetect`** — filter non-Indonesian noise
 - **`emoji`, `regex`** — text cleaning
 
 ### Storage
-- **Supabase Storage** — for publishing approved checkpoints (via `supabase-py`)
+- **HuggingFace Hub** — primary checkpoint store (`insanar/priormail-priority`); Supabase free tier caps at 50 MB, which blocks our ~475 MB checkpoints
+- **Supabase Storage** — intended long-term home per the backend contract; blocked by size until a quantized model or paid tier is decided (see §9)
 - Local checkpoints: `./checkpoints/` (gitignored)
 - Datasets cache: `./data/` (gitignored, raw files), `./data/processed/` (gitignored)
 
@@ -189,16 +195,17 @@ prior-mail-model/
 
 | Dataset | Use | Source |
 |---|---|---|
-| `indobenchmark/indonlu` | Pretraining baseline, Indonesian language adaptation | HuggingFace |
-| `jason23322/high-accuracy-email-classifier` | Initial priority classifier signal | HuggingFace |
+| `jason23322/high-accuracy-email-classifier` | Priority classifier — English source (baseline signal) | HuggingFace |
+| `insanar/prior-mail-priority` | **Team-curated priority dataset** — English, priority-labelled; canonical training source | HuggingFace (published by Insan) |
 | `ealvaradob/phishing-dataset` | Phishing detector primary training set | HuggingFace |
-| **Internal labeled set** | Domain adaptation for Indonesian work emails | Team-annotated (target: 500+ samples by Week 3) |
+
+> **`insanar/prior-mail-priority`** is the canonical dataset for the priority classifier. Use `load_dataset("insanar/prior-mail-priority")` in `src/data/loaders.py`. It supersedes `jason23322/high-accuracy-email-classifier` for any new training run.
 
 ### Labeling protocol (internal set)
-- Annotation guidelines in `./docs/ML_PIPELINE.md` (section: Labeling)
+- Annotation guidelines in `./docs/ML_PIPELINE.md` (section: Labeling) — or `./docs_local/` while the submodule is sparse
 - 2 annotators per email; resolve disagreements in a weekly sync
 - Track inter-annotator agreement (Cohen's kappa target: ≥ 0.7)
-- Store labels in `data/labeled/<batch>.jsonl`
+- Store labels in `data/labeled/<batch>.jsonl` (gitignored); published version lives at `insanar/prior-mail-priority`
 
 ### Privacy
 - **Never** commit raw user emails to git
@@ -234,13 +241,22 @@ A checkpoint can be **promoted to production** (exported to Supabase, referenced
 
 ## 9. Checkpoint Export & Backend Contract
 
-> Full contract in `./docs/ML_PIPELINE.md`. Key points below.
+> Full contract in `./docs/ML_PIPELINE.md` (pending creation) / `./docs_local/BACKEND_INTEGRATION_GUIDE.md` (current reference). Key points below.
 
-- Versioning scheme: `v<MAJOR>.<MINOR>` per model (e.g. `priority/v1.3`)
-- Upload path in Supabase Storage: `models/<model_name>/<version>/`
-- The backend pins to a specific version via env var — promotion to "production" means updating that env var, not overwriting old versions
+- Versioning scheme: `v<MAJOR>.<MINOR>` per model (e.g. `v1.1`, `v1.2`)
+- **Current storage:** HuggingFace Hub repo `insanar/priormail-priority`, with version as a subfolder (e.g. `v1.1/`)
+  - Load via `huggingface_hub.snapshot_download("insanar/priormail-priority", allow_patterns="v1.1/*")`
+- **Intended storage:** Supabase `models/<model_name>/<version>/` — blocked by 50 MB free-tier cap; unresolved (see §14)
+- The backend pins to a specific version via env var `PRIORITY_MODEL_URI` — promotion to "production" means updating that env var, not overwriting old versions
 - **Never delete or overwrite** an existing checkpoint version
 - Notify Syafiq + Insan in the team channel when a new version is published
+
+**Published versions:**
+
+| Model | Version | HF path | Status |
+|---|---|---|---|
+| priority (English proxy) | v1.0 | `insanar/priormail-priority/v1.0` | Baseline — not promoted |
+| priority (Indonesian proxy) | v1.1 | `insanar/priormail-priority/v1.1` | Baseline — not promoted |
 
 ---
 
@@ -324,18 +340,19 @@ git submodule update --remote docs             # pull latest shared specs
 
 LLMs: do **not** assume an answer — ask.
 
-- [ ] Phishing detector base model: IndoBERT vs multilingual BERT?
+- [ ] Phishing detector base model: `distilbert-base-uncased` vs `distilbert-base-multilingual-cased`?
 - [ ] Class imbalance handling: focal loss vs class weights vs resampling?
 - [ ] Summarizer: train our own (seq2seq) or rely on hosted LLM at inference time?
+- [ ] Checkpoint storage: keep HuggingFace Hub as permanent home, or upgrade Supabase to Pro, or quantize under 50 MB?
 
 ---
 
 ## 15. Owners
 
-- **Insan** — Lead, priority classifier, IndoBERT fine-tuning
+- **Insan** — Lead, priority classifier, DistilBERT fine-tuning
 - **Faiz** — Phishing detector, security-focused eval, adversarial testing
 - **Syafiq** — Dataset preprocessing collab, integration handoff
 
 ---
 
-*Last updated: 2026-05-25*
+*Last updated: 2026-06-09*
