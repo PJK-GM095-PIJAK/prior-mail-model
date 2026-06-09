@@ -73,7 +73,7 @@ HF_PHISHING_DATASET: str = "ealvaradob/phishing-dataset"
 # The full combined dataset includes URLs/SMS/websites — use this subset for
 # an email phishing model.  Verify the exact name in
 # notebooks/02_phishing_overview.ipynb and update here if it differs.
-HF_PHISHING_EMAIL_SUBSET: str = "emails"
+HF_PHISHING_EMAIL_SUBSET: str = "texts"  # confirmed: available configs are texts/urls/webs/combined_full/combined_reduced
 
 # How many Enron legit emails to sample as the negative class.
 # With ~18 K phishing emails in the email subset, 20 K legit gives ~1:1
