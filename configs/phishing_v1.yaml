@@ -1,0 +1,45 @@
+# Phishing detector — v1 baseline config.
+# Decision log (feat/phishing-model, 2026-06-09):
+#   Base model  : bert-base-multilingual-cased — English-capable (§11 decision,
+#                 approved by Insan; diverges from priority's IndoBERT because
+#                 ealvaradob/phishing-dataset is English-heavy).
+#   Legit class : Enron corporate email corpus (emails.csv, 20 K sampled).
+#   Imbalance   : weighted cross-entropy + 3× multiplier on phishing class.
+#
+# Run via:
+#   make data-phishing
+#   make train-phishing config=configs/phishing_v1.yaml
+
+model_type: phishing
+model_name: bert-base-multilingual-cased   # §11 decision: English-capable base
+
+dataset: ealvaradob/phishing-dataset       # primary phishing training data (HF)
+legit_source: emails.csv                   # Enron corpus — negative class source
+
+num_labels: 2   # legit (0) | phishing (1)  — matches PHISHING_LABELS in constants.py
+
+hyperparameters:
+  learning_rate: 2.0e-5         # AdamW (mirrors priority protocol, ML_PIPELINE.md §3)
+  weight_decay: 0.01
+  batch_size: 16
+  gradient_accumulation_steps: 1
+  num_epochs: 4                 # 3–5 with early stopping
+  warmup_ratio: 0.10
+  lr_scheduler_type: linear
+  max_seq_length: 512
+  # Early stopping on RECALL, not macro F1 — false negatives are worst case (§3).
+  early_stopping_metric: recall_phishing
+  early_stopping_patience: 2
+  class_weights: balanced                # inverse-frequency base weights from train dist
+  phishing_class_multiplier: 3.0         # extra multiplier on phishing class weight
+  mixed_precision: bf16                  # falls back to fp16 / none as needed
+
+seed: 42
+
+output_dir: checkpoints/phishing_v1
+
+wandb:
+  project: priormail
+  tags:
+    - model:phishing
+    - stage:baseline

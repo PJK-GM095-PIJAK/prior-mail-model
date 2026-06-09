@@ -28,13 +28,24 @@ install:  ## Install package + dev deps via uv
 data:  ## Download + preprocess the priority dataset. Optional: subset=v4
 	$(PY) -m src.data.prepare $(if $(subset),--subset $(subset),)
 
-train:  ## Run training. Requires: config=configs/<name>.yaml
+data-phishing:  ## Download + preprocess + split the phishing dataset
+	$(PY) -m src.data.prepare --phishing
+
+train:  ## Run priority training. Requires: config=configs/<name>.yaml
 	@if [ -z "$(config)" ]; then echo "ERROR: pass config=configs/<name>.yaml"; exit 1; fi
 	$(PY) -m src.training.train_priority --config $(config)
 
-eval:  ## Run eval suite. Requires: config=configs/<name>.yaml
+train-phishing:  ## Run phishing training. Requires: config=configs/phishing_v1.yaml
+	@if [ -z "$(config)" ]; then echo "ERROR: pass config=configs/phishing_v1.yaml"; exit 1; fi
+	$(PY) -m src.training.train_phishing --config $(config)
+
+eval:  ## Run priority eval suite. Requires: config=configs/<name>.yaml
 	@if [ -z "$(config)" ]; then echo "ERROR: pass config=configs/<name>.yaml"; exit 1; fi
 	$(PY) -m src.eval.eval_priority --config $(config)
+
+eval-phishing:  ## Run phishing eval + threshold selection. Requires: config=configs/phishing_v1.yaml
+	@if [ -z "$(config)" ]; then echo "ERROR: pass config=configs/phishing_v1.yaml"; exit 1; fi
+	$(PY) -m src.eval.eval_phishing --config $(config)
 
 export:  ## Package + upload checkpoint to Supabase. Requires: checkpoint=path/to/ckpt
 	@if [ -z "$(checkpoint)" ]; then echo "ERROR: pass checkpoint=path/to/ckpt"; exit 1; fi
