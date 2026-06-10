@@ -15,6 +15,8 @@ PY := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python)
 # Allow `make train config=...` and `make export checkpoint=...`
 config ?=
 checkpoint ?=
+# Dataset version (HF config) for `make data`. Empty -> prepare.py's default (v2).
+subset ?=
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -23,8 +25,8 @@ help:  ## Show this help
 install:  ## Install package + dev deps via uv
 	uv pip install -e ".[dev]"
 
-data:  ## Download + preprocess + split the priority dataset
-	$(PY) -m src.data.prepare
+data:  ## Download + preprocess the priority dataset. Optional: subset=v4
+	$(PY) -m src.data.prepare $(if $(subset),--subset $(subset),)
 
 train:  ## Run training. Requires: config=configs/<name>.yaml
 	@if [ -z "$(config)" ]; then echo "ERROR: pass config=configs/<name>.yaml"; exit 1; fi

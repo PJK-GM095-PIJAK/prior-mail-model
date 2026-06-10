@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 HF_PRIORITY_DATASET = "insanar/prior-mail-priority"
 # HF config (dataset "version"). ``v2`` is the current curated cut; ``default``/
 # ``v1`` are the larger earlier build. Pinned here so runs are reproducible.
-HF_PRIORITY_CONFIG = "v2"
+HF_PRIORITY_CONFIG = "v4"
 # Column on the source dataset holding the priority string (our 4-class label).
 SOURCE_LABEL_COLUMN = "label"
 

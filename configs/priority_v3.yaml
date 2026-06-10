@@ -1,0 +1,46 @@
+# Priority classifier — v3.0 (DistilBERT, English).
+# Same locked protocol as priority_v2.yaml (ML_PIPELINE.md §2). New lineage:
+# the team-curated `insanar/prior-mail-priority` dataset config `v4`, which is
+# class-balanced (~2000 rows/class) to fix the v2 majority-class collapse where
+# urgent/high emails were predicted `normal`. The v2.0 checkpoint stays published
+# and untouched; this is the v3.0 prod candidate.
+#
+# NOTE: the trainer/eval read `data/processed/priority` from disk, so the dataset
+# version is set by `make data subset=v4` (or `python -m src.data.prepare
+# --subset v4`), NOT by `dataset_config` below — that field is documentation only.
+
+model_type: priority
+model_name: distilbert-base-uncased   # LOCKED base model
+
+# Canonical priority dataset: direct 4-class labels + built-in splits.
+dataset: insanar/prior-mail-priority
+dataset_config: v4   # class-balanced cut (~2000/class)
+
+num_labels: 4
+
+hyperparameters:
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  batch_size: 16
+  gradient_accumulation_steps: 1
+  num_epochs: 4
+  warmup_ratio: 0.10
+  lr_scheduler_type: linear
+  max_seq_length: 512
+  early_stopping_metric: macro_f1
+  early_stopping_patience: 2
+  # Balanced dataset -> inverse-frequency weights collapse to ~1.0. Kept on for
+  # robustness if val/test splits are not perfectly balanced; harmless at uniform.
+  class_weights: balanced
+  mixed_precision: bf16
+
+seed: 42
+
+# Separate output dir so it never overwrites another version's checkpoint.
+output_dir: checkpoints/priority_v3
+
+wandb:
+  project: priormail
+  tags:
+    - model:priority
+    - stage:prod-candidate
