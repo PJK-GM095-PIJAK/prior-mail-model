@@ -1,3 +1,16 @@
+---
+language:
+  - en
+  - id
+license: other
+tags:
+  - text-classification
+  - phishing-detection
+  - bert
+base_model: bert-base-multilingual-cased
+pipeline_tag: text-classification
+---
+
 # Model Card — PriorMail Phishing Detector v1.0
 
 **Model ID:** `phishing/v1.0`
