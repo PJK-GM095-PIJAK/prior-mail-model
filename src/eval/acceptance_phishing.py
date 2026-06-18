@@ -45,6 +45,32 @@ logger = logging.getLogger(__name__)
 ACCEPTANCE_DIR = Path("eval/acceptance/phishing")
 RESULTS_DIR = Path("eval/results/phishing")
 
+# Real-world acceptance gates (v2.1, fix A2). These are the gate the §8 corpus
+# metrics CANNOT give us: the corpus test split is in-distribution, so it passed
+# for v1.0 / v2 while the product mis-classified real mail. Promotion now also
+# requires these to hold on the hand-curated .eml set.
+#   - FN rate mirrors the §8 recall>=0.95 bar (a missed phishing is the worst case).
+#   - FP rate caps the v1 over-flagging pain point.
+ACCEPTANCE_FN_RATE_GATE: float = 0.05
+ACCEPTANCE_FP_RATE_GATE: float = 0.20
+
+
+def check_acceptance_gates(report: dict) -> dict:
+    """Decide pass/fail for the real-world acceptance gates from a report dict.
+
+    Pure function (no model) so it is unit-testable. Expects the keys written by
+    ``evaluate_acceptance``: ``false_negative_rate`` and ``false_positive_rate``
+    (either may be ``None`` if a class is absent — treated as a failed gate, since
+    a meaningful acceptance run must exercise both classes).
+    """
+    fn_rate = report.get("false_negative_rate")
+    fp_rate = report.get("false_positive_rate")
+    gates = {
+        "false_negative_rate": fn_rate is not None and fn_rate <= ACCEPTANCE_FN_RATE_GATE,
+        "false_positive_rate": fp_rate is not None and fp_rate <= ACCEPTANCE_FP_RATE_GATE,
+    }
+    return {"gates": gates, "all_passed": all(gates.values())}
+
 
 def _eml_body(path: Path) -> str:
     """Extract the plain-text body from an ``.eml`` file (headers discarded)."""
@@ -143,15 +169,23 @@ def evaluate_acceptance(config: TrainingConfig, eml_dir: Path = ACCEPTANCE_DIR) 
         "accuracy": round(sum(r["correct"] for r in rows) / len(rows), 4),
         "results": rows,
     }
+    report.update(check_acceptance_gates(report))
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     (RESULTS_DIR / "acceptance_report.json").write_text(json.dumps(report, indent=2))
 
     logger.info(
-        "Acceptance: acc=%.3f | FP=%d/%d (rate %.3f) | FN=%d/%d (rate %.3f) | threshold=%.4f",
+        "Acceptance gates %s | acc=%.3f | FP=%d/%d (rate %.3f, gate <=%.2f) | "
+        "FN=%d/%d (rate %.3f, gate <=%.2f) | threshold=%.4f",
+        "PASSED ✅" if report["all_passed"] else "FAILED ❌",
         report["accuracy"], fp, n_legit, report["false_positive_rate"] or 0.0,
-        fn, n_phishing, report["false_negative_rate"] or 0.0, threshold,
+        ACCEPTANCE_FP_RATE_GATE,
+        fn, n_phishing, report["false_negative_rate"] or 0.0,
+        ACCEPTANCE_FN_RATE_GATE, threshold,
     )
+    if not report["all_passed"]:
+        failed = [k for k, v in report["gates"].items() if not v]
+        logger.warning("Failed acceptance gates: %s", failed)
     for r in rows:
         if not r["correct"]:
             logger.warning("  MISS %-32s label=%-8s prob=%.3f -> %s",
@@ -166,7 +200,11 @@ def _main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     cfg = TrainingConfig.from_yaml(args.config)
-    evaluate_acceptance(cfg, Path(args.eml_dir))
+    report = evaluate_acceptance(cfg, Path(args.eml_dir))
+    # Non-zero exit on a failed real-world gate so CI / make can block promotion.
+    # In the Kaggle notebook this is run via `!python …`, whose exit code is
+    # ignored, so the checkpoint still zips for offline inspection.
+    raise SystemExit(0 if report["all_passed"] else 1)
 
 
 if __name__ == "__main__":

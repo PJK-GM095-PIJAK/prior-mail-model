@@ -71,6 +71,40 @@ def test_build_phishing_input_is_body_only() -> None:
     assert "FROM:" not in out
     assert "SUBJECT:" not in out
     assert "Hi" not in out
-    # Body is still cleaned (URL masked).
+    # Body is still cleaned (URL masked) — v2.1 keeps the host as signal.
     assert URL_TOKEN in out
-    assert out == clean_text("Click http://evil.example.com now")
+    assert out == clean_text("Click http://evil.example.com now", keep_domains=True)
+
+
+def test_clean_text_keep_domains_preserves_url_host() -> None:
+    # Fix A1: the host survives as signal; the PII-bearing path/query is dropped.
+    out = clean_text(
+        "verify at https://paypa1-secure.tk/login?token=SECRET now",
+        keep_domains=True,
+    )
+    assert "paypa1-secure.tk" in out      # lookalike host kept
+    assert URL_TOKEN in out               # path collapsed to the token
+    assert "token=SECRET" not in out      # PII / secret dropped
+    assert "/login" not in out
+
+
+def test_clean_text_keep_domains_preserves_full_subdomain_chain() -> None:
+    # A subdomain lookalike trick must stay fully visible.
+    out = clean_text("go to http://paypal.com.secure-login.tk/x", keep_domains=True)
+    assert "paypal.com.secure-login.tk" in out
+
+
+def test_clean_text_keep_domains_keeps_email_domain_masks_localpart() -> None:
+    out = clean_text("reply to ceo.name@evil-corp.tk asap", keep_domains=True)
+    assert "@evil-corp.tk" in out         # domain kept as signal
+    assert EMAIL_TOKEN in out             # local-part masked
+    assert "ceo.name" not in out          # PII dropped
+
+
+def test_clean_text_default_still_blanket_masks() -> None:
+    # Priority pipeline (default) is unchanged: full opaque masking, no host kept.
+    out = clean_text("visit https://paypal.com/login or mail a@b.com", keep_domains=False)
+    assert "paypal.com" not in out
+    assert "b.com" not in out
+    assert URL_TOKEN in out
+    assert EMAIL_TOKEN in out
