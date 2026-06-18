@@ -1,0 +1,13 @@
+From: Accounts <invoicing@global-billing-dept.example>
+To: you@yourcompany.example
+Subject: Outstanding invoice #88231 - immediate payment required
+Date: Thu, 18 Jun 2026 09:00:00 +0000
+Message-ID: <acc-11@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Please find attached your overdue invoice of $4,820.00. Payment is OVERDUE. O=
+pen the attached document and follow the payment instructions immediately to =
+avoid a 10% late fee and service interruption. Download: http://global-billin=
+g-dept.example/invoice88231.zip

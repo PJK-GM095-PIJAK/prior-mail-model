@@ -1,0 +1,13 @@
+From: IT Helpdesk <support@mail-quota-admin.example>
+To: you@yourcompany.example
+Subject: Action required: mailbox will be deactivated
+Date: Thu, 18 Jun 2026 09:00:00 +0000
+Message-ID: <acc-15@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Your mailbox has exceeded its storage quota and will be DEACTIVATED within 12=
+ hours. To keep your account active, verify your credentials here: http://mai=
+l-quota-admin.example/revalidate. Ignoring this message will result in perman=
+ent loss of emails.
