@@ -5,6 +5,7 @@ from src.data.preprocess import (
     build_phishing_input,
     build_priority_input,
     clean_text,
+    sender_signal,
     strip_html,
 )
 from src.utils.constants import EMAIL_TOKEN, URL_TOKEN
@@ -62,18 +63,34 @@ def test_build_priority_input_format() -> None:
     assert out == f"Subject here {SEP} Body here"
 
 
-def test_build_phishing_input_is_body_only() -> None:
-    # v2: body-only. Sender/subject are ignored to avoid the header-presence
-    # leak (Enron legit always has headers, phishing corpus rows do not).
-    out = build_phishing_input("attacker@evil.com", "Hi", "Click http://evil.example.com now")
-    # Sender + subject must NOT appear; no FROM/SUBJECT scaffolding.
-    assert "attacker@evil.com" not in out
-    assert "FROM:" not in out
-    assert "SUBJECT:" not in out
-    assert "Hi" not in out
-    # Body is still cleaned (URL masked) — v2.1 keeps the host as signal.
+def test_build_phishing_input_v21_format() -> None:
+    # v2.1: {sender} [SEP] {subject} [SEP] {body}. Sender reduced to domain,
+    # local-part dropped; subject + body present; two SEPs always present.
+    out = build_phishing_input(
+        "Boss <ceo@evil-corp.tk>", "Wire transfer", "Click http://evil.example.com now"
+    )
+    assert out.count(SEP) == 2
+    assert "evil-corp.tk" in out          # sender domain kept as signal
+    assert "ceo@evil-corp.tk" not in out  # local-part dropped
+    assert "Wire transfer" in out         # subject present (case preserved by clean_text)
+    assert "evil.example.com" in out      # body host kept (keep_domains)
     assert URL_TOKEN in out
-    assert out == clean_text("Click http://evil.example.com now", keep_domains=True)
+
+
+def test_build_phishing_input_scaffolding_always_present() -> None:
+    # Header-less row (ealvaradob style): empty sender + subject, body only,
+    # but the [SEP] scaffolding is still there so presence never leaks the class.
+    out = build_phishing_input(None, None, "hello there")
+    assert out.count(SEP) == 2
+    assert out.endswith("hello there")
+
+
+def test_sender_signal_keeps_domain_drops_localpart() -> None:
+    assert sender_signal("Michael Chen <ceo.mchen@acme-finance.tk>") == "michael chen acme-finance.tk"
+    assert sender_signal("plain@bank.example") == "bank.example"
+    assert sender_signal("") == ""
+    assert sender_signal(None) == ""
+    assert "ceo.mchen" not in sender_signal("Michael Chen <ceo.mchen@acme-finance.tk>")
 
 
 def test_clean_text_keep_domains_preserves_url_host() -> None:

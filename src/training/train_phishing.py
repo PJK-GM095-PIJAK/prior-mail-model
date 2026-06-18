@@ -16,6 +16,13 @@ Decision log:
     Early stopping monitors f1_phishing, not raw recall. Model input is body-only
     (preprocess.build_phishing_input) to kill the v1 header-presence leak. Legit
     class diversified + balanced in loaders.load_phishing_dataset.
+  v2.1 (2026-06-19): v2 passed §8 test gates but missed half the real .eml
+    acceptance phishing (FN 0.50). Data/preprocess fixes, no hyperparameter
+    change: (A1) keep URL host + email domain as signal; (B1) synthetic
+    augmentation of the missed tactics (BEC, fake-invoice, credential harvest),
+    header-complete on both classes, via prepare --augmentation-size; (B2) input
+    back to {sender_domain} [SEP] {subject} [SEP] {body}, leak-safe because the
+    augmentation supplies headers on both classes. Acceptance set is now a gate.
 
 Run via:  make train-phishing config=configs/phishing_v2.yaml
 """

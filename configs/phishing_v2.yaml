@@ -1,5 +1,19 @@
 # Phishing detector — v2 config (DistilBERT rework).
 #
+# v2.1 update (2026-06-19): the v2 run passed the §8 in-distribution gates but
+# missed half the real .eml acceptance phishing (FN rate 0.50). Fixes landed in
+# the data/preprocess layer (no hyperparameter change needed):
+#   A1 — clean_text(keep_domains=True): URL host + email domain kept as signal
+#        (lookalike domains / odd TLDs) instead of an opaque [URL].
+#   B1 — synthetic augmentation: prepare adds 400 rows/class (header-complete,
+#        both classes) covering BEC / fake-invoice / credential tactics the
+#        corpora miss. Tune via `make data-phishing` → --augmentation-size.
+#   B2 — input is now {sender_domain} [SEP] {subject} [SEP] {body} (was body-only);
+#        leak-safe because the [SEP] scaffolding is always present and the
+#        augmentation gives BOTH classes realistic headers.
+#   Real-world promotion is now also gated on the .eml acceptance set
+#   (src/eval/acceptance_phishing.py), not just the in-distribution §8 metrics.
+#
 # Why v2 (see feat/phishing-distilbert-v2 analysis, 2026-06-18):
 #   v1.0 passed test gates (recall 0.970 / precision 0.928) but over-flagged on
 #   real .eml at inference. Root causes addressed here:

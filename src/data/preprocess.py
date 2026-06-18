@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 # BERT's separator. The tokenizer maps this string to its real [SEP] id.
 SEP = "[SEP]"
 
+# Pulls the address out of a ``Display Name <local@domain>`` From header.
+_ANGLE_ADDR_RE = re.compile(r"<([^>]+)>")
+
 # --- Patterns (compiled once) ---------------------------------------------
 # Drop <script>/<style> blocks *with their content* before stripping tags,
 # so JS/CSS text doesn't leak into the cleaned body.
@@ -106,31 +109,58 @@ def build_priority_input(subject: str | None, body: str | None) -> str:
     return f"{clean_text(subject)} {SEP} {clean_text(body)}"
 
 
+def sender_signal(sender_email: str | None) -> str:
+    """Reduce a From header to its phishing-relevant signal: display name + domain.
+
+    ``"Michael Chen (CEO)" <ceo.mchen@acmecorp-finance.tk>`` ->
+    ``michael chen (ceo) acmecorp-finance.tk``. The local-part (PII, and the
+    weakest signal) is dropped; the domain is kept because sender-domain
+    mismatch is the core tell for BEC and brand-impersonation phishing. Returns
+    ``""`` for an empty/header-less sender.
+    """
+    if not sender_email:
+        return ""
+    m = _ANGLE_ADDR_RE.search(sender_email)
+    if m:
+        display = sender_email[: m.start()].strip().strip('"')
+        addr = m.group(1).strip()
+    else:
+        display, addr = "", sender_email.strip()
+    domain = addr.split("@", 1)[1] if "@" in addr else ""
+    return _WS_RE.sub(" ", f"{display} {domain}").strip().lower()
+
+
 def build_phishing_input(
     sender_email: str | None, subject: str | None, body: str | None
 ) -> str:
-    """Assemble the phishing model's input — body-only (v2).
+    """Assemble the phishing model's input: ``{sender} [SEP] {subject} [SEP] {body}`` (v2.1).
 
-    v1 used ``FROM: {sender} [SEP] SUBJECT: {subject} [SEP] BODY: {body}``. That
-    leaked structure: in the training data the phishing corpus rows are body-only
-    (no RFC 2822 headers) while the Enron legit rows always carry From/Subject, so
-    header *presence* became a class proxy ("empty FROM/SUBJECT -> phishing"). That
-    shortcut breaks at inference, where real ``.eml`` files always have headers on
-    BOTH classes — the model then mis-reads ordinary legit mail.
+    History:
+      v1 used ``FROM: … [SEP] SUBJECT: … [SEP] BODY: …`` scaffolding. That leaked
+        structure: phishing corpus rows were body-only (no headers) while Enron
+        legit always carried From/Subject, so header *presence* became a class
+        proxy ("empty FROM/SUBJECT -> phishing"). It broke at inference, where
+        real ``.eml`` always has headers on BOTH classes.
+      v2 over-corrected to body-only. That killed the leak but also discarded the
+        sender — and with it the only signal for BEC/CEO-fraud (no URL, bland
+        body). Real-world recall collapsed to 0.50.
 
-    So v2 trains on the only field both classes share: the body. ``sender_email``
-    and ``subject`` are accepted (callers unchanged) but intentionally ignored.
-    Reinstate them once we have a dataset with headers on BOTH classes
-    (ML_PIPELINE.md §3) — track as a v2.1 experiment.
+    v2.1 reinstates sender + subject, made leak-safe by two changes:
+      * The ``[SEP]`` scaffolding is ALWAYS present; header-less rows just carry
+        empty sender/subject fields. The v1 leak was the *scaffolding* going
+        missing — fixed structure with empty fields removes that proxy.
+      * The synthetic augmentation (``augment.generate_phishing_augmentation``)
+        supplies BOTH classes with realistic headers, so header *content* is not
+        class-correlated. Inference always sees full headers, matching this regime.
 
-    v2.1 fix A1: the body is cleaned with ``keep_domains=True`` so suspicious URL
-    hosts and email domains (lookalike domains, odd TLDs like ``.tk``) survive as
-    signal instead of collapsing to an opaque ``[URL]``. Blanket masking was a
-    prime cause of the real-world false negatives (credential-harvest / fake-
-    invoice phishing scored ~0.0): ``paypal.com`` and ``paypa1-secure.tk`` had
-    become identical tokens.
+    Body and subject are cleaned with ``keep_domains=True`` (fix A1) so lookalike
+    URL hosts / email domains survive as signal instead of an opaque ``[URL]``.
+    The sender is reduced to display-name + domain by ``sender_signal``.
     """
-    return clean_text(body, keep_domains=True)
+    sender = sender_signal(sender_email)
+    subject_clean = clean_text(subject, keep_domains=True)
+    body_clean = clean_text(body, keep_domains=True)
+    return f"{sender} {SEP} {subject_clean} {SEP} {body_clean}"
 
 
 def _main() -> None:

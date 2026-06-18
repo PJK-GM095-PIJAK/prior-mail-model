@@ -72,9 +72,8 @@ def check_acceptance_gates(report: dict) -> dict:
     return {"gates": gates, "all_passed": all(gates.values())}
 
 
-def _eml_body(path: Path) -> str:
-    """Extract the plain-text body from an ``.eml`` file (headers discarded)."""
-    msg = message_from_bytes(path.read_bytes(), policy=default_policy)
+def _body_from_message(msg) -> str:
+    """Extract the plain-text body from a parsed email message (headers discarded)."""
     body_part = msg.get_body(preferencelist=("plain", "html"))
     if body_part is not None:
         return body_part.get_content()
@@ -83,6 +82,24 @@ def _eml_body(path: Path) -> str:
     if isinstance(payload, bytes):
         return payload.decode("utf-8", errors="ignore")
     return str(msg.get_payload() or "")
+
+
+def _eml_body(path: Path) -> str:
+    """Extract the plain-text body from an ``.eml`` file (headers discarded)."""
+    return _body_from_message(message_from_bytes(path.read_bytes(), policy=default_policy))
+
+
+def _eml_fields(path: Path) -> tuple[str, str, str]:
+    """Return (sender, subject, body) from an ``.eml`` — what the product receives.
+
+    v2.1: the model input is sender + subject + body, so the acceptance run must
+    feed the real From/Subject headers (v2 fed body only, blinding it to the
+    sender-domain signal that BEC/impersonation phishing turns on).
+    """
+    msg = message_from_bytes(path.read_bytes(), policy=default_policy)
+    sender = msg["From"] or ""
+    subject = msg["Subject"] or ""
+    return sender, subject, _body_from_message(msg)
 
 
 def _label_from_name(path: Path) -> int:
@@ -137,7 +154,8 @@ def evaluate_acceptance(config: TrainingConfig, eml_dir: Path = ACCEPTANCE_DIR) 
     fp = fn = n_legit = n_phishing = 0
     for path in files:
         label = _label_from_name(path)
-        prob = _prob(build_phishing_input(None, None, _eml_body(path)))
+        sender, subject, body = _eml_fields(path)
+        prob = _prob(build_phishing_input(sender, subject, body))
         pred = 1 if prob >= threshold else 0
         correct = pred == label
         if label == 1:

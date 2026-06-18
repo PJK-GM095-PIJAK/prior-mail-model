@@ -70,6 +70,7 @@ def prepare_phishing(
     output_dir: Path = PHISHING_DEFAULT_OUTPUT,
     enron_csv_path: str | Path = "emails.csv",
     legit_sample_size: int = 20_000,
+    augmentation_size: int = 400,
 ):
     """Run the full phishing data pipeline and save the result.
 
@@ -81,6 +82,8 @@ def prepare_phishing(
         output_dir: where to save the processed DatasetDict.
         enron_csv_path: path to the Enron legit email CSV.
         legit_sample_size: how many Enron rows to sample (negative class).
+        augmentation_size: v2.1 fix B1 — synthetic rows per class to add (covers
+            BEC / fake-invoice / credential tactics the corpora miss). 0 disables.
     """
     from src.data.loaders import load_phishing_dataset
     from src.data.preprocess import build_phishing_input
@@ -89,6 +92,7 @@ def prepare_phishing(
         enron_csv_path=enron_csv_path,
         legit_sample_size=legit_sample_size,
         seed=seed,
+        augmentation_size=augmentation_size,
     )
 
     pooled = ds["train"].select_columns(PHISHING_SPLIT_COLUMNS)
@@ -142,6 +146,10 @@ def _main() -> None:
         "--legit-sample-size", type=int, default=20_000,
         help="how many Enron rows to sample as legit negatives (phishing mode only)",
     )
+    parser.add_argument(
+        "--augmentation-size", type=int, default=400,
+        help="synthetic rows per class to add (phishing mode only; 0 disables, v2.1 fix B1)",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -152,6 +160,7 @@ def _main() -> None:
             output_dir=out,
             enron_csv_path=args.enron_csv,
             legit_sample_size=args.legit_sample_size,
+            augmentation_size=args.augmentation_size,
         )
     else:
         out = args.output if args.output else DEFAULT_OUTPUT

@@ -130,6 +130,7 @@ def load_phishing_dataset(
     priority_legit_config: str | None = HF_PRIORITY_CONFIG,
     legit_ratio: float = 1.2,
     use_enron: bool = False,
+    augmentation_size: int = 0,
 ):
     """Load the phishing training pool: ealvaradob phishing + a diversified legit class.
 
@@ -171,6 +172,11 @@ def load_phishing_dataset(
             to ``round(legit_ratio * n_phishing)`` if it exceeds that.
         use_enron: include Enron corporate emails in the legit pool (off by
             default per the v2 decision).
+        augmentation_size: v2.1 fix B1. If > 0, append this many synthetic
+            phishing AND this many synthetic legit rows (balanced, header-
+            complete) from ``augment.generate_phishing_augmentation`` — covering
+            the tactics the real ``.eml`` acceptance set exposed but the corpora
+            miss (BEC, fake-invoice, O365/PayPal credential, …). 0 disables it.
 
     Returns:
         A HuggingFace ``DatasetDict`` with a single ``"train"`` split.
@@ -289,6 +295,25 @@ def load_phishing_dataset(
     })
     phishing_ds = phishing_ds.cast(schema)
     legit_parts = [p.cast(schema) for p in legit_parts]
+
+    # ------------------------------------------------------------------
+    # 2c. Synthetic augmentation (v2.1 fix B1) — header-complete, both classes.
+    # Added AFTER the schema cast so it aligns; n_phishing is recomputed so the
+    # legit-balancing target below accounts for the extra phishing rows.
+    # ------------------------------------------------------------------
+    if augmentation_size > 0:
+        from src.data.augment import generate_phishing_augmentation
+
+        aug = generate_phishing_augmentation(n_per_class=augmentation_size, seed=seed).cast(schema)
+        aug_phishing = aug.filter(lambda r: r["labels"] != LEGIT)
+        aug_legit = aug.filter(lambda r: r["labels"] == LEGIT)
+        phishing_ds = concatenate_datasets([phishing_ds, aug_phishing])
+        legit_parts.append(aug_legit)
+        n_phishing = phishing_ds.num_rows
+        logger.info(
+            "Added synthetic augmentation: +%d phishing / +%d legit (n_phishing now %d)",
+            aug_phishing.num_rows, aug_legit.num_rows, n_phishing,
+        )
 
     legit_pool = concatenate_datasets(legit_parts) if len(legit_parts) > 1 else legit_parts[0]
     target_legit = round(legit_ratio * n_phishing)
