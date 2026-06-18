@@ -10,7 +10,7 @@ achieve recall >= 0.95 while maximising precision, then persisted as
 ``threshold.json``.  Adversarial checks (Faiz) run separately via
 ``--adversarial`` and write to ``eval/results/adversarial/``.
 
-Run via:  make eval-phishing config=configs/phishing_v1.yaml
+Run via:  make eval-phishing config=configs/phishing_v2.yaml
 """
 
 from __future__ import annotations

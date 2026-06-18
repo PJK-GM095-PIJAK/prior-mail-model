@@ -127,14 +127,27 @@ def load_phishing_dataset(
     seed: int = 42,
     hf_dataset: str = HF_PHISHING_DATASET,
     hf_subset: str | None = HF_PHISHING_EMAIL_SUBSET,
+    priority_legit_config: str | None = HF_PRIORITY_CONFIG,
+    legit_ratio: float = 1.2,
+    use_enron: bool = False,
 ):
-    """Load the phishing dataset (``ealvaradob/phishing-dataset``) + Enron legit emails.
+    """Load the phishing training pool: ealvaradob phishing + a diversified legit class.
 
-    Decision log (feat/phishing-model PR, 2026-06-09 — §2 of PHISHING_MODEL_GUIDE):
-    - Negative (legit) class source: Enron corporate email corpus (``emails.csv``).
-    - Imbalance handling: weighted cross-entropy (class weights in training config).
-    - Base model: bert-base-multilingual-cased (English-capable; §11 decision,
-      approved by Insan).
+    Decision log:
+    - v1.0 (2026-06-09): legit = Enron only; base = bert-base-multilingual-cased.
+      Passed test gates but over-flagged real .eml — legit was Enron-dominated
+      (model learned "non-Enron-style => phishing") and the FROM/SUBJECT header
+      asymmetry leaked structure.
+    - v2 (2026-06-18): legit = ealvaradob benign rows (``texts`` subset is ~62%
+      benign) + emails from the team priority dataset
+      (``insanar/prior-mail-priority``). The priority set IS the product's real
+      legit distribution (transactional, updates, banking-themed legit mail), so
+      it directly attacks real-world false positives. The pooled legit class is
+      downsampled to ``legit_ratio`` × phishing so the classes stay ~balanced
+      (lets us keep modest class weights — see configs/phishing_v2.yaml). Enron
+      is OFF by default (``use_enron``); base model is now distilbert-base-uncased.
+      Note: ``build_phishing_input`` is body-only in v2, so sender/subject here
+      are kept for the schema but not fed to the model.
 
     Columns in the returned DatasetDict["train"]:
         sender_email  str  — From field (empty string if not in source data)
@@ -143,31 +156,25 @@ def load_phishing_dataset(
         phishing      str  — "legit" | "phishing"
         labels        int  — 0 = legit, 1 = phishing  (PHISHING_LABEL2ID)
 
-    Preprocessing applied here:
-    - RFC 2822 email strings (both HF dataset and Enron) are parsed via
-      ``_parse_raw_email`` to extract sender / subject / body fields.
-    - Deduplication on the first 200 chars of body to remove near-duplicates
-      before splitting (prevents leakage across train/val/test).
-
     ``prepare_phishing()`` in ``src/data/prepare.py`` calls this function, then
     applies ``build_phishing_input()`` and ``stratified_split()``.
 
     Args:
-        enron_csv_path: path to the Enron emails CSV (``file``, ``message`` cols).
-            Pass ``None`` or a non-existent path to skip Enron (legit class will
-            come from HF benign rows only — expect heavier imbalance).
-        legit_sample_size: how many Enron rows to sample.  Sampling is random
-            with ``seed`` for reproducibility.
-        seed: random seed for Enron sampling.  Must match the training config.
+        enron_csv_path: path to the Enron emails CSV (only used if ``use_enron``).
+        legit_sample_size: cap on Enron rows sampled (only used if ``use_enron``).
+        seed: random seed for sampling/shuffling. Must match the training config.
         hf_dataset: HuggingFace dataset id for the phishing source.
-        hf_subset: dataset config/subset name.  Set to ``None`` to load the
-            default config (may mix email / URL / SMS records — consider
-            filtering by dataset type in that case).
+        hf_subset: dataset config/subset name (default ``texts``).
+        priority_legit_config: HF config of ``insanar/prior-mail-priority`` to
+            add as legit negatives. ``None`` to skip.
+        legit_ratio: target legit:phishing ratio. The legit pool is downsampled
+            to ``round(legit_ratio * n_phishing)`` if it exceeds that.
+        use_enron: include Enron corporate emails in the legit pool (off by
+            default per the v2 decision).
 
     Returns:
         A HuggingFace ``DatasetDict`` with a single ``"train"`` split.
-        Downstream ``prepare_phishing()`` handles the stratified train/val/test
-        split.
+        Downstream ``prepare_phishing()`` handles the stratified split.
     """
     import random
     from pathlib import Path as _Path
@@ -177,8 +184,10 @@ def load_phishing_dataset(
 
     from src.utils.constants import PHISHING_LABEL2ID
 
+    LEGIT = PHISHING_LABEL2ID["legit"]
+
     # ------------------------------------------------------------------
-    # 1. Load phishing examples from HuggingFace
+    # 1. Load phishing source; split into phishing (positive) and benign legit.
     # ------------------------------------------------------------------
     try:
         hf_kwargs: dict = {"trust_remote_code": True}
@@ -217,53 +226,81 @@ def load_phishing_dataset(
         }
 
     hf_ds = hf_rows.map(_hf_row_to_fields, remove_columns=hf_rows.column_names)
-    n_phishing_hf = sum(1 for x in hf_ds["labels"] if x == 1)
-    n_legit_hf = sum(1 for x in hf_ds["labels"] if x == 0)
-    logger.info("HF dataset: %d phishing / %d legit", n_phishing_hf, n_legit_hf)
+    phishing_ds = hf_ds.filter(lambda r: r["labels"] != LEGIT)
+    n_phishing = phishing_ds.num_rows
+    legit_parts: list[Dataset] = [hf_ds.filter(lambda r: r["labels"] == LEGIT)]
+    logger.info("HF dataset: %d phishing / %d benign legit", n_phishing, legit_parts[0].num_rows)
 
     # ------------------------------------------------------------------
-    # 2. Load Enron legit emails (negative class supplement)
+    # 2a. Priority-dataset emails as legit negatives (product distribution).
+    # ------------------------------------------------------------------
+    if priority_legit_config:
+        pri = load_dataset(HF_PRIORITY_DATASET, priority_legit_config)
+        pri_all = concatenate_datasets([pri[s] for s in pri])
+
+        def _pri_to_legit(row: dict) -> dict:
+            return {
+                "sender_email": "",
+                "subject": row.get("subject") or "",
+                "body": row.get("body") or "",
+                "phishing": "legit",
+                "labels": LEGIT,
+            }
+
+        pri_legit = pri_all.map(_pri_to_legit, remove_columns=pri_all.column_names)
+        legit_parts.append(pri_legit)
+        logger.info("Added %d legit emails from %s:%s", pri_legit.num_rows,
+                    HF_PRIORITY_DATASET, priority_legit_config)
+
+    # ------------------------------------------------------------------
+    # 2b. Enron legit (off by default — see v2 decision log).
     # ------------------------------------------------------------------
     enron_path = _Path(enron_csv_path) if enron_csv_path else None
-    enron_ds: Dataset | None = None
-
-    if enron_path is not None and enron_path.exists():
+    if use_enron and enron_path is not None and enron_path.exists():
         enron_df = pd.read_csv(enron_path, usecols=["message"])
         enron_df = enron_df.dropna(subset=["message"]).reset_index(drop=True)
-        # Sample before parsing to avoid processing all 517 K rows.
         sample_size = min(legit_sample_size, len(enron_df))
         rng = random.Random(seed)
         sample_idx = sorted(rng.sample(range(len(enron_df)), sample_size))
         enron_df = enron_df.iloc[sample_idx].reset_index(drop=True)
-        logger.info("Sampled %d rows from Enron CSV (%s)", len(enron_df), enron_path)
-
         enron_records = []
         for msg_str in enron_df["message"]:
             sender, subject, body = _parse_raw_email(str(msg_str))
             enron_records.append({
-                "sender_email": sender,
-                "subject": subject,
-                "body": body,
-                "phishing": "legit",
-                "labels": PHISHING_LABEL2ID["legit"],
+                "sender_email": sender, "subject": subject, "body": body,
+                "phishing": "legit", "labels": LEGIT,
             })
-        enron_ds = Dataset.from_list(enron_records)
-        logger.info("Built %d Enron legit records", enron_ds.num_rows)
-    else:
-        logger.warning(
-            "Enron CSV not found at %s — legit class from HF benign rows only. "
-            "Expect heavier class imbalance; consider increasing phishing_class_multiplier.",
-            enron_path,
-        )
+        legit_parts.append(Dataset.from_list(enron_records))
+        logger.info("Added %d Enron legit records", len(enron_records))
 
     # ------------------------------------------------------------------
-    # 3. Combine
+    # 3. Pool + balance legit to ~legit_ratio × phishing (keeps weights modest).
     # ------------------------------------------------------------------
-    combined = concatenate_datasets([hf_ds, enron_ds]) if enron_ds is not None else hf_ds
+    # Sources disagree on string subtype (ealvaradob -> string, priority ->
+    # large_string); cast everyone to one schema so concatenation aligns.
+    from datasets import Features, Value
+
+    schema = Features({
+        "sender_email": Value("string"),
+        "subject": Value("string"),
+        "body": Value("string"),
+        "phishing": Value("string"),
+        "labels": Value("int64"),
+    })
+    phishing_ds = phishing_ds.cast(schema)
+    legit_parts = [p.cast(schema) for p in legit_parts]
+
+    legit_pool = concatenate_datasets(legit_parts) if len(legit_parts) > 1 else legit_parts[0]
+    target_legit = round(legit_ratio * n_phishing)
+    if legit_pool.num_rows > target_legit:
+        legit_pool = legit_pool.shuffle(seed=seed).select(range(target_legit))
+        logger.info("Downsampled legit pool to %d (target ratio %.2f× phishing)",
+                    target_legit, legit_ratio)
+
+    combined = concatenate_datasets([phishing_ds, legit_pool])
 
     # ------------------------------------------------------------------
     # 4. Deduplicate on body fingerprint to prevent train/val/test leakage.
-    #    See audit note: phishing corpora often contain near-duplicate emails.
     # ------------------------------------------------------------------
     before = combined.num_rows
     seen: set[str] = set()

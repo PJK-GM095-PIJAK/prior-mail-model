@@ -10,7 +10,7 @@ Implements the pipeline from ML_PIPELINE.md §2 (priority) and §3 (phishing):
 
 Input format assembled here:
     priority: ``{subject} [SEP] {body}``
-    phishing: ``FROM: {sender} [SEP] SUBJECT: {subject} [SEP] BODY: {body}``
+    phishing: ``{body}`` (body-only — see ``build_phishing_input`` for why)
 """
 
 from __future__ import annotations
@@ -81,19 +81,21 @@ def build_priority_input(subject: str | None, body: str | None) -> str:
 def build_phishing_input(
     sender_email: str | None, subject: str | None, body: str | None
 ) -> str:
-    """Assemble the phishing model's input (ML_PIPELINE.md §3).
+    """Assemble the phishing model's input — body-only (v2).
 
-    ``FROM: {sender} [SEP] SUBJECT: {subject} [SEP] BODY: {body}`` — the sender
-    is included intentionally; it carries strong phishing signal. The sender is
-    NOT run through ``clean_text`` (we must not mask it to ``[EMAIL]``); it's
-    only whitespace-normalized.
+    v1 used ``FROM: {sender} [SEP] SUBJECT: {subject} [SEP] BODY: {body}``. That
+    leaked structure: in the training data the phishing corpus rows are body-only
+    (no RFC 2822 headers) while the Enron legit rows always carry From/Subject, so
+    header *presence* became a class proxy ("empty FROM/SUBJECT -> phishing"). That
+    shortcut breaks at inference, where real ``.eml`` files always have headers on
+    BOTH classes — the model then mis-reads ordinary legit mail.
+
+    So v2 trains on the only field both classes share: the body. ``sender_email``
+    and ``subject`` are accepted (callers unchanged) but intentionally ignored.
+    Reinstate them once we have a dataset with headers on BOTH classes
+    (ML_PIPELINE.md §3) — track as a v2.1 experiment.
     """
-    sender = _WS_RE.sub(" ", (sender_email or "")).strip()
-    return (
-        f"FROM: {sender} {SEP} "
-        f"SUBJECT: {clean_text(subject)} {SEP} "
-        f"BODY: {clean_text(body)}"
-    )
+    return clean_text(body)
 
 
 def _main() -> None:

@@ -62,9 +62,15 @@ def test_build_priority_input_format() -> None:
     assert out == f"Subject here {SEP} Body here"
 
 
-def test_build_phishing_input_keeps_sender_unmasked() -> None:
-    out = build_phishing_input("attacker@evil.com", "Hi", "Body")
-    # Sender carries signal — it must NOT be masked to [EMAIL].
-    assert "attacker@evil.com" in out
-    assert out.startswith("FROM: attacker@evil.com")
-    assert out.count(SEP) == 2
+def test_build_phishing_input_is_body_only() -> None:
+    # v2: body-only. Sender/subject are ignored to avoid the header-presence
+    # leak (Enron legit always has headers, phishing corpus rows do not).
+    out = build_phishing_input("attacker@evil.com", "Hi", "Click http://evil.example.com now")
+    # Sender + subject must NOT appear; no FROM/SUBJECT scaffolding.
+    assert "attacker@evil.com" not in out
+    assert "FROM:" not in out
+    assert "SUBJECT:" not in out
+    assert "Hi" not in out
+    # Body is still cleaned (URL masked).
+    assert URL_TOKEN in out
+    assert out == clean_text("Click http://evil.example.com now")

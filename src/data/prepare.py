@@ -104,6 +104,13 @@ def prepare_phishing(
         }
 
     splits = splits.map(_add_phishing_model_input)
+    # Drop rows whose body-only input is empty (a few source emails have no body)
+    # — a blank input is a degenerate training example.
+    before = {k: splits[k].num_rows for k in splits}
+    splits = splits.filter(lambda r: bool(r["model_input"].strip()))
+    dropped = sum(before[k] - splits[k].num_rows for k in splits)
+    if dropped:
+        logger.info("Dropped %d rows with empty model_input", dropped)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     splits.save_to_disk(str(output_dir))
