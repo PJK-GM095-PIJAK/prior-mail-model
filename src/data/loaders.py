@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,78 @@ def _parse_raw_email(text: str) -> tuple[str, str, str]:
         return "", "", text
 
 
+# Column-name candidates for the Nazario CSV (schema-flexible — different mirrors
+# name these differently; Naser's Kaggle cut uses sender/subject/body/label).
+_NAZ_BODY_COLS = ("body", "text", "text_combined", "email", "message", "content")
+_NAZ_SUBJECT_COLS = ("subject",)
+_NAZ_SENDER_COLS = ("sender", "from", "sender_email")
+_NAZ_LABEL_COLS = ("label", "class", "type")
+# Label values that mean "phishing" when a label column is present.
+_NAZ_PHISH_LABELS = {"1", "phishing", "phish", "phishing email", "1.0"}
+
+
+def _read_nazario_phishing(
+    csv_path: str | Path, *, sample_size: int | None = None, seed: int = 42
+) -> list[dict]:
+    """Read real phishing emails from the Nazario CSV into the loader's schema.
+
+    Schema-flexible: locates the body/subject/sender/label columns case-
+    insensitively (Naser's Kaggle cut is ``sender,receiver,date,subject,body,
+    urls,label``; other mirrors collapse everything into one text column). If a
+    label column is present, only phishing rows are kept (the Nazario corpus is
+    all phishing, but combined mirrors may not be). When a row carries no separate
+    subject/sender but the body looks like a raw RFC 822 message, headers are
+    parsed out via ``_parse_raw_email``.
+
+    Returns a list of dicts with keys ``sender_email, subject, body, phishing,
+    labels`` (labels = 1). Rows with an empty body are dropped.
+    """
+    import random as _random
+
+    import pandas as pd
+
+    df = pd.read_csv(csv_path, dtype=str, keep_default_na=False, low_memory=False)
+    cols = {c.lower().strip(): c for c in df.columns}
+
+    body_c = next((cols[k] for k in _NAZ_BODY_COLS if k in cols), None)
+    if body_c is None:
+        raise ValueError(
+            f"Nazario CSV {csv_path} has no recognizable body/text column "
+            f"(looked for {_NAZ_BODY_COLS}); got columns {list(df.columns)}."
+        )
+    subject_c = next((cols[k] for k in _NAZ_SUBJECT_COLS if k in cols), None)
+    sender_c = next((cols[k] for k in _NAZ_SENDER_COLS if k in cols), None)
+    label_c = next((cols[k] for k in _NAZ_LABEL_COLS if k in cols), None)
+
+    records: list[dict] = []
+    for _, row in df.iterrows():
+        if label_c is not None and str(row[label_c]).strip().lower() not in _NAZ_PHISH_LABELS:
+            continue
+        subject = (row[subject_c] if subject_c else "").strip()
+        sender = (row[sender_c] if sender_c else "").strip()
+        raw = (row[body_c] or "").strip()
+        # If no split headers but the body is a raw email, recover From/Subject.
+        if not subject and not sender and raw[:400].lower().lstrip().startswith(
+            ("from:", "received:", "subject:", "return-path:", "delivered-to:")
+        ):
+            p_sender, p_subject, p_body = _parse_raw_email(raw)
+            sender, subject, body = p_sender, p_subject, (p_body or raw)
+        else:
+            body = raw
+        if not body.strip():
+            continue
+        records.append({
+            "sender_email": sender, "subject": subject, "body": body,
+            "phishing": "phishing", "labels": 1,
+        })
+
+    if sample_size is not None and len(records) > sample_size:
+        rng = _random.Random(seed)
+        idx = sorted(rng.sample(range(len(records)), sample_size))
+        records = [records[i] for i in idx]
+    return records
+
+
 def load_phishing_dataset(
     enron_csv_path: str | Path = "emails.csv",
     legit_sample_size: int = ENRON_LEGIT_SAMPLE,
@@ -131,6 +204,9 @@ def load_phishing_dataset(
     legit_ratio: float = 1.2,
     use_enron: bool = False,
     augmentation_size: int = 0,
+    nazario_csv_path: str | Path | None = None,
+    use_nazario: bool = False,
+    nazario_sample_size: int | None = None,
 ):
     """Load the phishing training pool: ealvaradob phishing + a diversified legit class.
 
@@ -177,6 +253,16 @@ def load_phishing_dataset(
             complete) from ``augment.generate_phishing_augmentation`` — covering
             the tactics the real ``.eml`` acceptance set exposed but the corpora
             miss (BEC, fake-invoice, O365/PayPal credential, …). 0 disables it.
+        nazario_csv_path: path to the Nazario phishing CSV (e.g. ``Nazario.csv``
+            from the Kaggle ``phishing-email-dataset``). Only used if
+            ``use_nazario``.
+        use_nazario: v2.2 — add the **real** Jose Nazario phishing corpus to the
+            phishing class. Synthetic augmentation hit a ceiling (v2.1 missed
+            phishing mimicking routine SaaS/workflow notifications because it only
+            saw templated tactics); real, header-bearing phishing adds the
+            diversity templates can't. Off by default.
+        nazario_sample_size: optional cap on Nazario rows (random, seeded). None
+            keeps all.
 
     Returns:
         A HuggingFace ``DatasetDict`` with a single ``"train"`` split.
@@ -313,6 +399,31 @@ def load_phishing_dataset(
         logger.info(
             "Added synthetic augmentation: +%d phishing / +%d legit (n_phishing now %d)",
             aug_phishing.num_rows, aug_legit.num_rows, n_phishing,
+        )
+
+    # ------------------------------------------------------------------
+    # 2d. Nazario real phishing corpus (v2.2). Real, header-bearing phishing
+    # emails to break the synthetic-augmentation ceiling — added to the PHISHING
+    # side only; n_phishing is recomputed so legit balancing accounts for them.
+    # ------------------------------------------------------------------
+    naz_path = _Path(nazario_csv_path) if nazario_csv_path else None
+    if use_nazario and naz_path is not None and naz_path.exists():
+        naz_records = _read_nazario_phishing(naz_path, sample_size=nazario_sample_size, seed=seed)
+        if naz_records:
+            naz_ds = Dataset.from_list(naz_records).cast(schema)
+            phishing_ds = concatenate_datasets([phishing_ds, naz_ds])
+            n_phishing = phishing_ds.num_rows
+            logger.info(
+                "Added %d Nazario real phishing emails (n_phishing now %d)",
+                naz_ds.num_rows, n_phishing,
+            )
+        else:
+            logger.warning("Nazario CSV %s yielded 0 usable rows — skipping.", naz_path)
+    elif use_nazario:
+        logger.warning(
+            "use_nazario=True but Nazario CSV not found at %s — skipping "
+            "(attach the Kaggle phishing-email-dataset and copy Nazario.csv).",
+            naz_path,
         )
 
     legit_pool = concatenate_datasets(legit_parts) if len(legit_parts) > 1 else legit_parts[0]
