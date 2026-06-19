@@ -54,6 +54,8 @@ _COMPANIES = [
 _BRANDS = [
     ("Microsoft", "microsoft.com"),
     ("Microsoft 365", "microsoft.com"),
+    ("Office 365", "office365.com"),
+    ("Outlook", "outlook.com"),
     ("PayPal", "paypal.com"),
     ("Netflix", "netflix.com"),
     ("Google", "google.com"),
