@@ -15,3 +15,8 @@ make data                                   # download + preprocess the priority
 make train config=configs/priority_v2.yaml  # fine-tune
 make eval  config=configs/priority_v2.yaml  # run the eval gates
 ```
+
+## Model Link
+
+Phishing Model: https://huggingface.co/faizhuda/priormail-phishing
+Priority Model: https://huggingface.co/insanar/priormail-priority 
