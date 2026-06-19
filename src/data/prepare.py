@@ -70,7 +70,7 @@ def prepare_phishing(
     output_dir: Path = PHISHING_DEFAULT_OUTPUT,
     enron_csv_path: str | Path = "emails.csv",
     legit_sample_size: int = 20_000,
-    augmentation_size: int = 400,
+    augmentation_size: int = 600,
 ):
     """Run the full phishing data pipeline and save the result.
 
@@ -147,7 +147,7 @@ def _main() -> None:
         help="how many Enron rows to sample as legit negatives (phishing mode only)",
     )
     parser.add_argument(
-        "--augmentation-size", type=int, default=400,
+        "--augmentation-size", type=int, default=600,
         help="synthetic rows per class to add (phishing mode only; 0 disables, v2.1 fix B1)",
     )
     args = parser.parse_args()

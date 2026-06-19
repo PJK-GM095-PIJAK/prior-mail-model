@@ -5,9 +5,9 @@
 # the data/preprocess layer (no hyperparameter change needed):
 #   A1 — clean_text(keep_domains=True): URL host + email domain kept as signal
 #        (lookalike domains / odd TLDs) instead of an opaque [URL].
-#   B1 — synthetic augmentation: prepare adds 400 rows/class (header-complete,
-#        both classes) covering BEC / fake-invoice / credential tactics the
-#        corpora miss. Tune via `make data-phishing` → --augmentation-size.
+#   B1 — synthetic augmentation: prepare adds 600 rows/class (header-complete,
+#        both classes) covering BEC / fake-invoice / brand- AND IT-helpdesk
+#        credential tactics the corpora miss. Tune via --augmentation-size.
 #   B2 — input is now {sender_domain} [SEP] {subject} [SEP] {body} (was body-only);
 #        leak-safe because the [SEP] scaffolding is always present and the
 #        augmentation gives BOTH classes realistic headers.

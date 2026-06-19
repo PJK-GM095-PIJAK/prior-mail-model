@@ -48,8 +48,12 @@ _COMPANIES = [
     "Bluewave", "Ironclad", "Summit", "Helios", "Granite", "Pinnacle", "Kirana",
 ]
 # Brands a credential-harvest mail impersonates, with a legit reference domain.
+# "Microsoft 365" carries the same reference (microsoft.com) but a distinct
+# display name — productivity-suite credential phishing is a top real tactic and
+# the bare "Microsoft" display alone did not generalize to it (v2.1 acceptance).
 _BRANDS = [
     ("Microsoft", "microsoft.com"),
+    ("Microsoft 365", "microsoft.com"),
     ("PayPal", "paypal.com"),
     ("Netflix", "netflix.com"),
     ("Google", "google.com"),
@@ -75,7 +79,11 @@ def _lookalike_domain(rng: random.Random, base: str) -> str:
         f"{stem}-verify",
         f"{stem}-support",
         f"{stem}-account",
+        f"{stem}-account-team",   # mimics "<brand>-account-team" lookalike hosts
+        f"{stem}-security",
+        f"{stem}-services",
         f"secure-{stem}",
+        f"account-{stem}",
         f"{stem}{rng.randint(0, 9)}",
         stem.replace("l", "I", 1) if "l" in stem else f"{stem}-id",
     ])
@@ -169,9 +177,48 @@ def _gen_delivery(rng: random.Random) -> tuple[str, str, str]:
     return f"{brand} <{rng.choice(['delivery', 'parcel', 'no-reply'])}@{domain}>", subject, body
 
 
+def _gen_it_credential(rng: random.Random) -> tuple[str, str, str]:
+    """Generic IT-helpdesk / mailbox credential phishing — NO consumer brand.
+
+    The 'your mailbox is over quota / will be deactivated, re-verify here' tactic
+    impersonates an internal IT desk rather than a brand, so ``_gen_credential``
+    (which always picks a ``_BRANDS`` brand) never produced it. v2 missed exactly
+    this on the acceptance set. Wording is kept distinct from the holdout .eml.
+    """
+    host_stem = rng.choice([
+        "mail-administrator", "webmail-team", "account-services",
+        "mailbox-support", "email-team", "it-helpdesk", "secure-mailbox",
+        "email-verification",
+    ])
+    tld = rng.choice(_TLDS_SUSPICIOUS)
+    domain = f"{host_stem}.{tld}"
+    url = f"http://{domain}/{rng.choice(['verify', 'revalidate', 'signin', 'renew', 'restore'])}"
+    subject = rng.choice([
+        "Mailbox storage limit reached",
+        "Re-verify your email account",
+        "Your account is scheduled for suspension",
+        "Email account verification required",
+        "Action needed to keep your mailbox active",
+    ])
+    body = (
+        f"Your {rng.choice(['mailbox', 'email account', 'webmail account'])} has "
+        f"{rng.choice(['reached its storage limit', 'pending security updates', 'unverified recent activity'])} "
+        f"and will be {rng.choice(['suspended', 'locked', 'restricted'])} within "
+        f"{rng.choice([12, 24, 48])} hours. To keep access, "
+        f"{rng.choice(['re-verify your details', 'confirm your identity', 'update your information'])} "
+        f"here: {url} . Failure to act will result in "
+        f"{rng.choice(['loss of access', 'account closure', 'permanent deactivation'])}."
+    )
+    sender = (
+        f"{rng.choice(['IT Service Desk', 'Account Security', 'Mail Administrator', 'Help Desk'])} "
+        f"<{rng.choice(['support', 'admin', 'no-reply', 'security'])}@{domain}>"
+    )
+    return sender, subject, body
+
+
 _PHISHING_GENERATORS = [
-    _gen_bec, _gen_credential, _gen_credential, _gen_fake_invoice,
-    _gen_delivery, _gen_fake_invoice,  # weight credential/invoice (most common)
+    _gen_bec, _gen_credential, _gen_credential, _gen_it_credential,
+    _gen_it_credential, _gen_fake_invoice, _gen_delivery, _gen_fake_invoice,
 ]
 
 
