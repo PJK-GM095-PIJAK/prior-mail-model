@@ -1,0 +1,12 @@
+From: Expensify <no-reply@expensify.example>
+To: you@yourcompany.example
+Subject: Your expense report was approved
+Date: Fri, 19 Jun 2026 08:46:00 +0000
+Message-ID: <acc-34@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Your expense report "June travel" totaling $214.50 has been approved by your
+manager and will be reimbursed in the next payroll cycle. No further action is
+needed. You can view the report details from your Expensify dashboard.

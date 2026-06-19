@@ -1,0 +1,14 @@
+From: Norton Support <billing@norton-renewal-team.example>
+To: you@yourcompany.example
+Subject: Your Norton subscription has been renewed - $389.99
+Date: Fri, 19 Jun 2026 08:20:00 +0000
+Message-ID: <acc-21@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Your Norton 360 subscription has been automatically renewed and your card was
+charged $389.99. If you did not authorize this renewal, you can cancel and
+request a full refund within 24 hours here:
+http://norton-renewal-team.example/cancel . Refunds cannot be processed after
+this window closes.

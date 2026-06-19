@@ -12,11 +12,26 @@ ordinary mail).
 - Links use `*.example` placeholder domains — nothing resolvable or malicious.
 
 ## Coverage
-- **legit/** weighted toward the categories v1 over-flagged: transactional
-  (orders/receipts), 2FA codes, password resets you requested, newsletters,
-  urgent-but-benign internal mail, personal mail.
-- **phishing/** spans tactics: credential harvest, BEC/CEO fraud, fake
-  invoice/delivery, account-suspension scare, lottery, IT-helpdesk quota scam.
+36 files, balanced 18 legit / 18 phishing (expanded for v2.1 so the gate is a
+meaningful *rate*, not an all-or-nothing call on 8 examples, and a true
+out-of-sample judge — these tactics/wording are deliberately distinct from the
+synthetic augmentation in `src/data/augment.py`).
+- **legit/** weighted toward what v1/v2 over-flag: transactional (orders,
+  receipts, statements, shipping), 2FA codes, password resets you requested,
+  newsletters, urgent-but-benign internal mail, calendar invites, and
+  service/dev notifications (GitHub, CI, Slack) — including deliberately
+  "scary but legit" ones (a real new-sign-in security alert) to probe false
+  positives.
+- **phishing/** spans tactics: credential harvest (brand + IT-helpdesk), BEC/CEO
+  fraud, fake invoice/delivery, account-suspension scare, lottery, plus tax
+  refund, crypto wallet, shared-document lure, voicemail, payroll redirect,
+  subscription scare, job-offer scam, DocuSign lure, MFA-reset scare, card block.
+
+> Note: a single text content-model is structurally weak against adversarial
+> phishing that mimics a legitimate notification and whose only tell is a
+> lookalike sender domain (e.g. `office365_login`). Those cases are a documented
+> known-limitation best closed with header/auth signals (SPF/DKIM/DMARC) at the
+> backend, not by overfitting the augmentation to this holdout.
 
 ## Run
 ```bash

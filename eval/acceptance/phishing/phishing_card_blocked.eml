@@ -1,0 +1,13 @@
+From: Card Services <alert@securebank-cardcenter.example>
+To: you@yourcompany.example
+Subject: Your debit card has been temporarily blocked
+Date: Fri, 19 Jun 2026 08:28:00 +0000
+Message-ID: <acc-25@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+We have temporarily blocked your debit card ending 4417 after detecting a
+suspicious transaction of $329.00. To unblock your card and confirm the charge,
+verify your identity here: http://securebank-cardcenter.example/unblock . Your
+card will stay blocked until verification is completed.

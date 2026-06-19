@@ -1,0 +1,13 @@
+From: Voicemail Service <voicemail@unified-messaging-srv.example>
+To: you@yourcompany.example
+Subject: New voicemail message (00:48)
+Date: Fri, 19 Jun 2026 08:16:00 +0000
+Message-ID: <acc-19@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+You have received a new voicemail of 48 seconds from an unrecognized caller. To
+listen to your message, sign in to the voice portal here:
+http://unified-messaging-srv.example/play . Voice messages are automatically
+deleted from the system after 48 hours.

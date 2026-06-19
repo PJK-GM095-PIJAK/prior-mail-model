@@ -1,0 +1,12 @@
+From: FedEx <tracking@fedex.example>
+To: you@yourcompany.example
+Subject: Your package is out for delivery
+Date: Fri, 19 Jun 2026 08:36:00 +0000
+Message-ID: <acc-29@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Good news - your shipment 7741 0098 2231 is out for delivery and is expected to
+arrive today by 8 PM. No action is needed from you. You can follow its progress
+any time in the FedEx app.
