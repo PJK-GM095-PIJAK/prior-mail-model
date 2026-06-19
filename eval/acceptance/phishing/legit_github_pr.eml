@@ -1,0 +1,12 @@
+From: GitHub <notifications@github.example>
+To: you@yourcompany.example
+Subject: [priormail/backend] Please review pull request #214
+Date: Fri, 19 Jun 2026 08:30:00 +0000
+Message-ID: <acc-26@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Syafiq requested your review on pull request #214, "Add phishing model loader".
+You can review the changes from your repository's Pull Requests tab. This is an
+automated notification because you are a reviewer on this repository.

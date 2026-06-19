@@ -1,0 +1,13 @@
+From: DHL Express <delivery@dhl-parcel-update.example>
+To: you@yourcompany.example
+Subject: Your package is on hold - customs fee required
+Date: Thu, 18 Jun 2026 09:00:00 +0000
+Message-ID: <acc-12@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Your parcel could not be delivered because a small customs fee of $2.99 is un=
+paid. To release your package, pay the fee here within 24 hours or it will be=
+ returned to sender: http://dhl-parcel-update.example/pay. Tracking: GH884120=
+3.

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -121,20 +122,109 @@ def _parse_raw_email(text: str) -> tuple[str, str, str]:
         return "", "", text
 
 
+# Column-name candidates for the Nazario CSV (schema-flexible — different mirrors
+# name these differently; Naser's Kaggle cut uses sender/subject/body/label).
+_NAZ_BODY_COLS = ("body", "text", "text_combined", "email", "message", "content")
+_NAZ_SUBJECT_COLS = ("subject",)
+_NAZ_SENDER_COLS = ("sender", "from", "sender_email")
+_NAZ_LABEL_COLS = ("label", "class", "type")
+# Label values that mean "phishing" when a label column is present.
+_NAZ_PHISH_LABELS = {"1", "phishing", "phish", "phishing email", "1.0"}
+
+
+def _read_nazario_phishing(
+    csv_path: str | Path, *, sample_size: int | None = None, seed: int = 42
+) -> list[dict]:
+    """Read real phishing emails from the Nazario CSV into the loader's schema.
+
+    Schema-flexible: locates the body/subject/sender/label columns case-
+    insensitively (Naser's Kaggle cut is ``sender,receiver,date,subject,body,
+    urls,label``; other mirrors collapse everything into one text column). If a
+    label column is present, only phishing rows are kept (the Nazario corpus is
+    all phishing, but combined mirrors may not be). When a row carries no separate
+    subject/sender but the body looks like a raw RFC 822 message, headers are
+    parsed out via ``_parse_raw_email``.
+
+    Returns a list of dicts with keys ``sender_email, subject, body, phishing,
+    labels`` (labels = 1). Rows with an empty body are dropped.
+    """
+    import random as _random
+
+    import pandas as pd
+
+    df = pd.read_csv(csv_path, dtype=str, keep_default_na=False, low_memory=False)
+    cols = {c.lower().strip(): c for c in df.columns}
+
+    body_c = next((cols[k] for k in _NAZ_BODY_COLS if k in cols), None)
+    if body_c is None:
+        raise ValueError(
+            f"Nazario CSV {csv_path} has no recognizable body/text column "
+            f"(looked for {_NAZ_BODY_COLS}); got columns {list(df.columns)}."
+        )
+    subject_c = next((cols[k] for k in _NAZ_SUBJECT_COLS if k in cols), None)
+    sender_c = next((cols[k] for k in _NAZ_SENDER_COLS if k in cols), None)
+    label_c = next((cols[k] for k in _NAZ_LABEL_COLS if k in cols), None)
+
+    records: list[dict] = []
+    for _, row in df.iterrows():
+        if label_c is not None and str(row[label_c]).strip().lower() not in _NAZ_PHISH_LABELS:
+            continue
+        subject = (row[subject_c] if subject_c else "").strip()
+        sender = (row[sender_c] if sender_c else "").strip()
+        raw = (row[body_c] or "").strip()
+        # If no split headers but the body is a raw email, recover From/Subject.
+        if not subject and not sender and raw[:400].lower().lstrip().startswith(
+            ("from:", "received:", "subject:", "return-path:", "delivered-to:")
+        ):
+            p_sender, p_subject, p_body = _parse_raw_email(raw)
+            sender, subject, body = p_sender, p_subject, (p_body or raw)
+        else:
+            body = raw
+        if not body.strip():
+            continue
+        records.append({
+            "sender_email": sender, "subject": subject, "body": body,
+            "phishing": "phishing", "labels": 1,
+        })
+
+    if sample_size is not None and len(records) > sample_size:
+        rng = _random.Random(seed)
+        idx = sorted(rng.sample(range(len(records)), sample_size))
+        records = [records[i] for i in idx]
+    return records
+
+
 def load_phishing_dataset(
     enron_csv_path: str | Path = "emails.csv",
     legit_sample_size: int = ENRON_LEGIT_SAMPLE,
     seed: int = 42,
     hf_dataset: str = HF_PHISHING_DATASET,
     hf_subset: str | None = HF_PHISHING_EMAIL_SUBSET,
+    priority_legit_config: str | None = HF_PRIORITY_CONFIG,
+    legit_ratio: float = 1.2,
+    use_enron: bool = False,
+    augmentation_size: int = 0,
+    nazario_csv_path: str | Path | None = None,
+    use_nazario: bool = False,
+    nazario_sample_size: int | None = None,
 ):
-    """Load the phishing dataset (``ealvaradob/phishing-dataset``) + Enron legit emails.
+    """Load the phishing training pool: ealvaradob phishing + a diversified legit class.
 
-    Decision log (feat/phishing-model PR, 2026-06-09 — §2 of PHISHING_MODEL_GUIDE):
-    - Negative (legit) class source: Enron corporate email corpus (``emails.csv``).
-    - Imbalance handling: weighted cross-entropy (class weights in training config).
-    - Base model: bert-base-multilingual-cased (English-capable; §11 decision,
-      approved by Insan).
+    Decision log:
+    - v1.0 (2026-06-09): legit = Enron only; base = bert-base-multilingual-cased.
+      Passed test gates but over-flagged real .eml — legit was Enron-dominated
+      (model learned "non-Enron-style => phishing") and the FROM/SUBJECT header
+      asymmetry leaked structure.
+    - v2 (2026-06-18): legit = ealvaradob benign rows (``texts`` subset is ~62%
+      benign) + emails from the team priority dataset
+      (``insanar/prior-mail-priority``). The priority set IS the product's real
+      legit distribution (transactional, updates, banking-themed legit mail), so
+      it directly attacks real-world false positives. The pooled legit class is
+      downsampled to ``legit_ratio`` × phishing so the classes stay ~balanced
+      (lets us keep modest class weights — see configs/phishing_v2.yaml). Enron
+      is OFF by default (``use_enron``); base model is now distilbert-base-uncased.
+      Note: ``build_phishing_input`` is body-only in v2, so sender/subject here
+      are kept for the schema but not fed to the model.
 
     Columns in the returned DatasetDict["train"]:
         sender_email  str  — From field (empty string if not in source data)
@@ -143,31 +233,40 @@ def load_phishing_dataset(
         phishing      str  — "legit" | "phishing"
         labels        int  — 0 = legit, 1 = phishing  (PHISHING_LABEL2ID)
 
-    Preprocessing applied here:
-    - RFC 2822 email strings (both HF dataset and Enron) are parsed via
-      ``_parse_raw_email`` to extract sender / subject / body fields.
-    - Deduplication on the first 200 chars of body to remove near-duplicates
-      before splitting (prevents leakage across train/val/test).
-
     ``prepare_phishing()`` in ``src/data/prepare.py`` calls this function, then
     applies ``build_phishing_input()`` and ``stratified_split()``.
 
     Args:
-        enron_csv_path: path to the Enron emails CSV (``file``, ``message`` cols).
-            Pass ``None`` or a non-existent path to skip Enron (legit class will
-            come from HF benign rows only — expect heavier imbalance).
-        legit_sample_size: how many Enron rows to sample.  Sampling is random
-            with ``seed`` for reproducibility.
-        seed: random seed for Enron sampling.  Must match the training config.
+        enron_csv_path: path to the Enron emails CSV (only used if ``use_enron``).
+        legit_sample_size: cap on Enron rows sampled (only used if ``use_enron``).
+        seed: random seed for sampling/shuffling. Must match the training config.
         hf_dataset: HuggingFace dataset id for the phishing source.
-        hf_subset: dataset config/subset name.  Set to ``None`` to load the
-            default config (may mix email / URL / SMS records — consider
-            filtering by dataset type in that case).
+        hf_subset: dataset config/subset name (default ``texts``).
+        priority_legit_config: HF config of ``insanar/prior-mail-priority`` to
+            add as legit negatives. ``None`` to skip.
+        legit_ratio: target legit:phishing ratio. The legit pool is downsampled
+            to ``round(legit_ratio * n_phishing)`` if it exceeds that.
+        use_enron: include Enron corporate emails in the legit pool (off by
+            default per the v2 decision).
+        augmentation_size: v2.1 fix B1. If > 0, append this many synthetic
+            phishing AND this many synthetic legit rows (balanced, header-
+            complete) from ``augment.generate_phishing_augmentation`` — covering
+            the tactics the real ``.eml`` acceptance set exposed but the corpora
+            miss (BEC, fake-invoice, O365/PayPal credential, …). 0 disables it.
+        nazario_csv_path: path to the Nazario phishing CSV (e.g. ``Nazario.csv``
+            from the Kaggle ``phishing-email-dataset``). Only used if
+            ``use_nazario``.
+        use_nazario: v2.2 — add the **real** Jose Nazario phishing corpus to the
+            phishing class. Synthetic augmentation hit a ceiling (v2.1 missed
+            phishing mimicking routine SaaS/workflow notifications because it only
+            saw templated tactics); real, header-bearing phishing adds the
+            diversity templates can't. Off by default.
+        nazario_sample_size: optional cap on Nazario rows (random, seeded). None
+            keeps all.
 
     Returns:
         A HuggingFace ``DatasetDict`` with a single ``"train"`` split.
-        Downstream ``prepare_phishing()`` handles the stratified train/val/test
-        split.
+        Downstream ``prepare_phishing()`` handles the stratified split.
     """
     import random
     from pathlib import Path as _Path
@@ -177,8 +276,10 @@ def load_phishing_dataset(
 
     from src.utils.constants import PHISHING_LABEL2ID
 
+    LEGIT = PHISHING_LABEL2ID["legit"]
+
     # ------------------------------------------------------------------
-    # 1. Load phishing examples from HuggingFace
+    # 1. Load phishing source; split into phishing (positive) and benign legit.
     # ------------------------------------------------------------------
     try:
         hf_kwargs: dict = {"trust_remote_code": True}
@@ -217,53 +318,125 @@ def load_phishing_dataset(
         }
 
     hf_ds = hf_rows.map(_hf_row_to_fields, remove_columns=hf_rows.column_names)
-    n_phishing_hf = sum(1 for x in hf_ds["labels"] if x == 1)
-    n_legit_hf = sum(1 for x in hf_ds["labels"] if x == 0)
-    logger.info("HF dataset: %d phishing / %d legit", n_phishing_hf, n_legit_hf)
+    phishing_ds = hf_ds.filter(lambda r: r["labels"] != LEGIT)
+    n_phishing = phishing_ds.num_rows
+    legit_parts: list[Dataset] = [hf_ds.filter(lambda r: r["labels"] == LEGIT)]
+    logger.info("HF dataset: %d phishing / %d benign legit", n_phishing, legit_parts[0].num_rows)
 
     # ------------------------------------------------------------------
-    # 2. Load Enron legit emails (negative class supplement)
+    # 2a. Priority-dataset emails as legit negatives (product distribution).
+    # ------------------------------------------------------------------
+    if priority_legit_config:
+        pri = load_dataset(HF_PRIORITY_DATASET, priority_legit_config)
+        pri_all = concatenate_datasets([pri[s] for s in pri])
+
+        def _pri_to_legit(row: dict) -> dict:
+            return {
+                "sender_email": "",
+                "subject": row.get("subject") or "",
+                "body": row.get("body") or "",
+                "phishing": "legit",
+                "labels": LEGIT,
+            }
+
+        pri_legit = pri_all.map(_pri_to_legit, remove_columns=pri_all.column_names)
+        legit_parts.append(pri_legit)
+        logger.info("Added %d legit emails from %s:%s", pri_legit.num_rows,
+                    HF_PRIORITY_DATASET, priority_legit_config)
+
+    # ------------------------------------------------------------------
+    # 2b. Enron legit (off by default — see v2 decision log).
     # ------------------------------------------------------------------
     enron_path = _Path(enron_csv_path) if enron_csv_path else None
-    enron_ds: Dataset | None = None
-
-    if enron_path is not None and enron_path.exists():
+    if use_enron and enron_path is not None and enron_path.exists():
         enron_df = pd.read_csv(enron_path, usecols=["message"])
         enron_df = enron_df.dropna(subset=["message"]).reset_index(drop=True)
-        # Sample before parsing to avoid processing all 517 K rows.
         sample_size = min(legit_sample_size, len(enron_df))
         rng = random.Random(seed)
         sample_idx = sorted(rng.sample(range(len(enron_df)), sample_size))
         enron_df = enron_df.iloc[sample_idx].reset_index(drop=True)
-        logger.info("Sampled %d rows from Enron CSV (%s)", len(enron_df), enron_path)
-
         enron_records = []
         for msg_str in enron_df["message"]:
             sender, subject, body = _parse_raw_email(str(msg_str))
             enron_records.append({
-                "sender_email": sender,
-                "subject": subject,
-                "body": body,
-                "phishing": "legit",
-                "labels": PHISHING_LABEL2ID["legit"],
+                "sender_email": sender, "subject": subject, "body": body,
+                "phishing": "legit", "labels": LEGIT,
             })
-        enron_ds = Dataset.from_list(enron_records)
-        logger.info("Built %d Enron legit records", enron_ds.num_rows)
-    else:
-        logger.warning(
-            "Enron CSV not found at %s — legit class from HF benign rows only. "
-            "Expect heavier class imbalance; consider increasing phishing_class_multiplier.",
-            enron_path,
+        legit_parts.append(Dataset.from_list(enron_records))
+        logger.info("Added %d Enron legit records", len(enron_records))
+
+    # ------------------------------------------------------------------
+    # 3. Pool + balance legit to ~legit_ratio × phishing (keeps weights modest).
+    # ------------------------------------------------------------------
+    # Sources disagree on string subtype (ealvaradob -> string, priority ->
+    # large_string); cast everyone to one schema so concatenation aligns.
+    from datasets import Features, Value
+
+    schema = Features({
+        "sender_email": Value("string"),
+        "subject": Value("string"),
+        "body": Value("string"),
+        "phishing": Value("string"),
+        "labels": Value("int64"),
+    })
+    phishing_ds = phishing_ds.cast(schema)
+    legit_parts = [p.cast(schema) for p in legit_parts]
+
+    # ------------------------------------------------------------------
+    # 2c. Synthetic augmentation (v2.1 fix B1) — header-complete, both classes.
+    # Added AFTER the schema cast so it aligns; n_phishing is recomputed so the
+    # legit-balancing target below accounts for the extra phishing rows.
+    # ------------------------------------------------------------------
+    if augmentation_size > 0:
+        from src.data.augment import generate_phishing_augmentation
+
+        aug = generate_phishing_augmentation(n_per_class=augmentation_size, seed=seed).cast(schema)
+        aug_phishing = aug.filter(lambda r: r["labels"] != LEGIT)
+        aug_legit = aug.filter(lambda r: r["labels"] == LEGIT)
+        phishing_ds = concatenate_datasets([phishing_ds, aug_phishing])
+        legit_parts.append(aug_legit)
+        n_phishing = phishing_ds.num_rows
+        logger.info(
+            "Added synthetic augmentation: +%d phishing / +%d legit (n_phishing now %d)",
+            aug_phishing.num_rows, aug_legit.num_rows, n_phishing,
         )
 
     # ------------------------------------------------------------------
-    # 3. Combine
+    # 2d. Nazario real phishing corpus (v2.2). Real, header-bearing phishing
+    # emails to break the synthetic-augmentation ceiling — added to the PHISHING
+    # side only; n_phishing is recomputed so legit balancing accounts for them.
     # ------------------------------------------------------------------
-    combined = concatenate_datasets([hf_ds, enron_ds]) if enron_ds is not None else hf_ds
+    naz_path = _Path(nazario_csv_path) if nazario_csv_path else None
+    if use_nazario and naz_path is not None and naz_path.exists():
+        naz_records = _read_nazario_phishing(naz_path, sample_size=nazario_sample_size, seed=seed)
+        if naz_records:
+            naz_ds = Dataset.from_list(naz_records).cast(schema)
+            phishing_ds = concatenate_datasets([phishing_ds, naz_ds])
+            n_phishing = phishing_ds.num_rows
+            logger.info(
+                "Added %d Nazario real phishing emails (n_phishing now %d)",
+                naz_ds.num_rows, n_phishing,
+            )
+        else:
+            logger.warning("Nazario CSV %s yielded 0 usable rows — skipping.", naz_path)
+    elif use_nazario:
+        logger.warning(
+            "use_nazario=True but Nazario CSV not found at %s — skipping "
+            "(attach the Kaggle phishing-email-dataset and copy Nazario.csv).",
+            naz_path,
+        )
+
+    legit_pool = concatenate_datasets(legit_parts) if len(legit_parts) > 1 else legit_parts[0]
+    target_legit = round(legit_ratio * n_phishing)
+    if legit_pool.num_rows > target_legit:
+        legit_pool = legit_pool.shuffle(seed=seed).select(range(target_legit))
+        logger.info("Downsampled legit pool to %d (target ratio %.2f× phishing)",
+                    target_legit, legit_ratio)
+
+    combined = concatenate_datasets([phishing_ds, legit_pool])
 
     # ------------------------------------------------------------------
     # 4. Deduplicate on body fingerprint to prevent train/val/test leakage.
-    #    See audit note: phishing corpora often contain near-duplicate emails.
     # ------------------------------------------------------------------
     before = combined.num_rows
     seen: set[str] = set()

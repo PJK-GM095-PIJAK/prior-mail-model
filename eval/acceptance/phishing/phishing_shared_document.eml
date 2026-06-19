@@ -1,0 +1,13 @@
+From: SharePoint <no-reply@sharepoint-docshare.example>
+To: you@yourcompany.example
+Subject: A document has been shared with you
+Date: Fri, 19 Jun 2026 08:14:00 +0000
+Message-ID: <acc-18@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+A colleague has shared the file "Q3_Bonus_Structure.xlsx" with you. The document
+requires you to sign in before viewing. Open the shared file here:
+http://sharepoint-docshare.example/view?id=4471 . This share link will expire in
+24 hours for security reasons.

@@ -1,20 +1,30 @@
-﻿"""Fine-tune bert-base-multilingual-cased for binary phishing detection.)
+"""Fine-tune distilbert-base-uncased for binary phishing detection.
 
-Protocol mirrors the priority classifier (ML_PIPELINE.md Â§3) with three
+Protocol mirrors the priority classifier (ML_PIPELINE.md section 3) with two
 phishing-specific differences:
-  1. Class weights heavily favour the phishing class (``phishing_class_multiplier``
-     in config) to push recall up.
-  2. Early stopping monitors ``recall_phishing``, NOT macro F1.
-  3. The inference threshold is selected post-training on the validation set
+  1. Class weights favour the phishing class (``phishing_class_multiplier`` in
+     config) to push recall up - kept modest in v2 (see decision log).
+  2. The inference threshold is selected post-training on the validation set
      (``eval_phishing.select_threshold``), NOT the default 0.5.
 
-Decision log (feat/phishing-model, 2026-06-09):
-  Base model : bert-base-multilingual-cased (English-capable; IndoBERT would
-               underperform on the English-heavy ealvaradob dataset â€” Â§11).
-  Legit class: Enron corporate email corpus (emails.csv).
-  Imbalance  : weighted cross-entropy + phishing_class_multiplier.
+Decision log:
+  v1.0 (2026-06-09): bert-base-multilingual-cased, Enron-only legit, balanced
+    class weights x3.0 multiplier, early stopping on recall. Passed test gates
+    but over-flagged real .eml at inference.
+  v2 (2026-06-18): base -> distilbert-base-uncased (English-only data, on-spec,
+    faster on CPU). Class multiplier 3.0 -> 1.0 (let the threshold drive recall).
+    Early stopping monitors f1_phishing, not raw recall. Model input is body-only
+    (preprocess.build_phishing_input) to kill the v1 header-presence leak. Legit
+    class diversified + balanced in loaders.load_phishing_dataset.
+  v2.1 (2026-06-19): v2 passed §8 test gates but missed half the real .eml
+    acceptance phishing (FN 0.50). Data/preprocess fixes, no hyperparameter
+    change: (A1) keep URL host + email domain as signal; (B1) synthetic
+    augmentation of the missed tactics (BEC, fake-invoice, credential harvest),
+    header-complete on both classes, via prepare --augmentation-size; (B2) input
+    back to {sender_domain} [SEP] {subject} [SEP] {body}, leak-safe because the
+    augmentation supplies headers on both classes. Acceptance set is now a gate.
 
-Run via:  make train-phishing config=configs/phishing_v1.yaml
+Run via:  make train-phishing config=configs/phishing_v2.yaml
 """
 
 from __future__ import annotations
@@ -193,7 +203,7 @@ def train(config: TrainingConfig) -> None:
         logging_steps=50,
         seed=config.seed,
         report_to=["wandb"],
-        run_name=f"phishing-v1-{sha}",
+        run_name=f"{Path(config.output_dir).name}-{sha}",
     )
 
     callbacks = [

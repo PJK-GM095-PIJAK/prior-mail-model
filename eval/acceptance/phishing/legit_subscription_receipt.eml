@@ -1,0 +1,12 @@
+From: Spotify <no-reply@spotify.example>
+To: you@yourcompany.example
+Subject: Your receipt from Spotify
+Date: Fri, 19 Jun 2026 08:42:00 +0000
+Message-ID: <acc-32@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Thanks for being a Premium member. We have charged $10.99 to the card on file
+for your Spotify Premium monthly plan. Your next billing date is February 18.
+You can view or manage your subscription any time from your account settings.

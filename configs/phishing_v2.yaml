@@ -1,0 +1,78 @@
+# Phishing detector — v2 config (DistilBERT rework).
+#
+# v2.1 update (2026-06-19): the v2 run passed the §8 in-distribution gates but
+# missed half the real .eml acceptance phishing (FN rate 0.50). Fixes landed in
+# the data/preprocess layer (no hyperparameter change needed):
+#   A1 — clean_text(keep_domains=True): URL host + email domain kept as signal
+#        (lookalike domains / odd TLDs) instead of an opaque [URL].
+#   B1 — synthetic augmentation: prepare adds 600 rows/class (header-complete,
+#        both classes) covering BEC / fake-invoice / brand- AND IT-helpdesk
+#        credential tactics the corpora miss. Tune via --augmentation-size.
+#   B2 — input is now {sender_domain} [SEP] {subject} [SEP] {body} (was body-only);
+#        leak-safe because the [SEP] scaffolding is always present and the
+#        augmentation gives BOTH classes realistic headers.
+#   Real-world promotion is now also gated on the .eml acceptance set
+#   (src/eval/acceptance_phishing.py), not just the in-distribution §8 metrics.
+#
+# v2.2 update (2026-06-19): add the REAL Jose Nazario phishing corpus
+#   (prepare --use-nazario; Kaggle naserabdullahalam/phishing-email-dataset →
+#   Nazario.csv). The 36-file acceptance holdout showed synthetic augmentation
+#   alone hit a ceiling: the model missed phishing that mimics routine SaaS/
+#   workflow notifications (DocuSign/MFA/payroll/shared-doc/subscription). Real,
+#   header-bearing phishing adds the diversity templates cannot.
+#
+# Why v2 (see feat/phishing-distilbert-v2 analysis, 2026-06-18):
+#   v1.0 passed test gates (recall 0.970 / precision 0.928) but over-flagged on
+#   real .eml at inference. Root causes addressed here:
+#     #1 Base model  : distilbert-base-uncased — on-spec (ML_PIPELINE.md §3, mBERT
+#                      dropped: data is English-only; DistilBERT is faster on CPU
+#                      and ~3× smaller, easing the 500 ms gate + checkpoint size).
+#     #4 Class weight : multiplier dropped 3.0 -> 1.0. v1 stacked balanced (inverse-
+#                      frequency) AND a 3× multiplier => ~6× gradient pressure on
+#                      phishing, saturating its probability for almost any input.
+#                      Pure inverse-frequency now; the THRESHOLD does the recall
+#                      work, not the loss.
+#     #5 Early stop   : monitor f1_phishing, not recall_phishing. Monitoring raw
+#                      recall picked the most trigger-happy checkpoint; F1 balances
+#                      recall against precision. Recall is still guaranteed by the
+#                      eval-time threshold + gate.
+#   (#2 legit diversity + #3 body-only input are in loaders.py / preprocess.py.)
+#
+# Run via:
+#   make data-phishing
+#   make train-phishing config=configs/phishing_v2.yaml
+
+model_type: phishing
+model_name: distilbert-base-uncased   # §3 decision: English-only data, on-spec
+
+dataset: ealvaradob/phishing-dataset       # primary phishing training data (HF)
+legit_source: emails.csv                   # Enron corpus — negative class source
+
+num_labels: 2   # legit (0) | phishing (1)  — matches PHISHING_LABELS in constants.py
+
+hyperparameters:
+  learning_rate: 2.0e-5         # AdamW (mirrors priority protocol, ML_PIPELINE.md §3)
+  weight_decay: 0.01
+  batch_size: 16
+  gradient_accumulation_steps: 1
+  num_epochs: 4                 # 3–5 with early stopping
+  warmup_ratio: 0.10
+  lr_scheduler_type: linear
+  max_seq_length: 512
+  # Early stopping on F1 — balances recall vs precision (fix #5). Recall is still
+  # enforced by the post-training threshold + the >=0.95 eval gate.
+  early_stopping_metric: f1_phishing
+  early_stopping_patience: 2
+  class_weights: balanced                # inverse-frequency base weights from train dist
+  phishing_class_multiplier: 1.0         # fix #4: no extra stacking — let threshold drive recall
+  mixed_precision: bf16                  # falls back to fp16 / none as needed
+
+seed: 42
+
+output_dir: checkpoints/phishing_v2
+
+wandb:
+  project: priormail
+  tags:
+    - model:phishing
+    - stage:exp

@@ -1,0 +1,13 @@
+From: Security Team <alert@bank-secure-verify.example>
+To: you@yourcompany.example
+Subject: Your account has been suspended - verify identity now
+Date: Thu, 18 Jun 2026 09:00:00 +0000
+Message-ID: <acc-08@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+Dear Customer, we detected unusual activity and have SUSPENDED your account f=
+or your protection. You must verify your identity within 24 hours or your acc=
+ount will be permanently closed. Verify now: http://bank-secure-verify.exampl=
+e/login Failure to act will result in loss of access.

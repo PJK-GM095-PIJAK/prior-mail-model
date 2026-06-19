@@ -1,0 +1,13 @@
+From: Wallet Security <alerts@coinbase-walletverify.example>
+To: you@yourcompany.example
+Subject: Action needed: verify your wallet to avoid suspension
+Date: Fri, 19 Jun 2026 08:12:00 +0000
+Message-ID: <acc-17@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+A withdrawal request of 0.42 BTC was just initiated from your wallet. If this
+was not you, secure your wallet now by re-validating your recovery phrase here:
+http://coinbase-walletverify.example/restore . Your wallet will be frozen in 2
+hours if no action is taken.

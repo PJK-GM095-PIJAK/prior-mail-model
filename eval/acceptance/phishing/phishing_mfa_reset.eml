@@ -1,0 +1,13 @@
+From: Security Team <security@account-protection-team.example>
+To: you@yourcompany.example
+Subject: Your two-factor authentication was reset
+Date: Fri, 19 Jun 2026 08:26:00 +0000
+Message-ID: <acc-24@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+The two-factor authentication on your account was just reset from a device we
+do not recognize. If you did not request this change, your account may be at
+risk. Reverse this and restore your security settings immediately:
+http://account-protection-team.example/restore-2fa .

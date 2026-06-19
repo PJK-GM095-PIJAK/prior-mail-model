@@ -1,0 +1,13 @@
+From: Tax Refund Center <refunds@irs-refund-portal.example>
+To: you@yourcompany.example
+Subject: You are eligible for a tax refund of $782.40
+Date: Fri, 19 Jun 2026 08:10:00 +0000
+Message-ID: <acc-16@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Our records show you are owed a tax refund of $782.40 for the 2025 fiscal year.
+To receive your refund, submit your banking details through our secure portal
+within 5 days: http://irs-refund-portal.example/claim . Unclaimed refunds are
+returned to the treasury and cannot be reissued.

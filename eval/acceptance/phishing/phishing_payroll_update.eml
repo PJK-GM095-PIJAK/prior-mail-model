@@ -1,0 +1,13 @@
+From: HR Payroll <payroll@hr-employee-portal.example>
+To: you@yourcompany.example
+Subject: Confirm your direct deposit details before Friday
+Date: Fri, 19 Jun 2026 08:18:00 +0000
+Message-ID: <acc-20@acceptance.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+We are updating payroll records ahead of the upcoming pay cycle. Please confirm
+or update your direct deposit information through the employee portal before
+Friday to avoid a delay in your salary payment:
+http://hr-employee-portal.example/deposit .
