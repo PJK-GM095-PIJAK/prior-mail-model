@@ -109,8 +109,8 @@ def test_select_threshold_perfect_separation() -> None:
     assert tp / n_phishing >= RECALL_GATE
 
 
-def test_select_threshold_maximises_precision() -> None:
-    """Among thresholds meeting recall >= 0.95, selects the one with best precision."""
+def test_select_threshold_meets_both_gates() -> None:
+    """The chosen threshold satisfies BOTH the recall and precision gates on val."""
     rng = np.random.default_rng(42)
     phishing_scores = rng.beta(8, 2, 300).tolist()   # concentrated near 1
     legit_scores = rng.beta(2, 6, 300).tolist()       # concentrated near 0
@@ -125,6 +125,29 @@ def test_select_threshold_maximises_precision() -> None:
     precision = precision_score(labels, preds, pos_label=1, zero_division=0)
     assert recall >= RECALL_GATE
     assert precision >= PRECISION_GATE
+
+
+def test_select_threshold_is_fn_averse_on_polarized_val() -> None:
+    """Regression: a val set polarised by easy synthetic phishing must NOT push
+    the threshold so high that borderline phishing is cut.
+
+    The old max-precision rule selected ~0.95 here, which would drop a real
+    phishing email scoring 0.6–0.9. The FN-averse F2 rule keeps the threshold
+    well below that borderline band.
+    """
+    # Val: phishing piled at ~0.99 (easy synthetic), legit piled at ~0.01.
+    scores = [0.99] * 300 + [0.01] * 300
+    labels = [1] * 300 + [0] * 300
+
+    t = select_threshold(scores, labels)
+
+    # Must leave headroom for borderline real phishing (e.g. 0.63, 0.89) to clear.
+    assert t <= 0.6, f"threshold {t} too high — would cut borderline phishing"
+    # And still respect both gates on the val set itself.
+    from sklearn.metrics import precision_score, recall_score
+    preds = [1 if s >= t else 0 for s in scores]
+    assert recall_score(labels, preds, pos_label=1, zero_division=0) >= RECALL_GATE
+    assert precision_score(labels, preds, pos_label=1, zero_division=0) >= PRECISION_GATE
 
 
 def test_select_threshold_fallback_when_impossible() -> None:

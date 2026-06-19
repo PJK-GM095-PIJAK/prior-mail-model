@@ -63,14 +63,28 @@ def check_gates(metrics: dict) -> dict:
 # Threshold selection
 # ---------------------------------------------------------------------------
 
+# Recall is weighted beta× precision in threshold selection (F-beta). beta=2 →
+# the chosen threshold leans toward catching phishing (FN-averse, CLAUDE.md §8).
+THRESHOLD_BETA_SQ: float = 4.0  # beta = 2  → beta**2 = 4
+
+
 def select_threshold(val_scores, val_labels) -> float:
-    """Pick threshold achieving recall >= 0.95 with maximum precision (val set).
+    """Pick an FN-averse decision threshold on the VALIDATION set.
 
-    Searches thresholds in [0.05, 0.95] at 0.01 steps.  Lower threshold →
-    higher recall (more positives predicted), higher threshold → higher
-    precision.  We want the highest threshold that still meets the recall gate.
+    False negatives are the worst case for a phishing detector (CLAUDE.md §8).
+    The earlier rule maximised *precision* subject to recall >= 0.95, which picks
+    the HIGHEST passing threshold. Once the synthetic augmentation polarised the
+    val scores, val-recall stayed >= 0.95 all the way up to ~0.95, so the rule
+    pushed the threshold to ~0.95 and silently cut borderline REAL phishing
+    (acceptance ``it_support`` scored 0.89 and ``package_delivery`` 0.63 — both
+    detected as suspicious, both dropped by the 0.95 cut).
 
-    The search is done on the VALIDATION set.  The test set is never touched
+    We now maximise F-beta (beta=2, recall weighted 2× precision) among thresholds
+    that meet BOTH gates (recall >= 0.95 AND precision >= 0.80) on val — favouring
+    recall without abandoning the precision contract. Fallbacks, in order: the
+    highest-recall threshold still meeting precision >= 0.80, then 0.5.
+
+    The search is done on the VALIDATION set; the test set is never touched
     during threshold selection (CLAUDE.md §8).
 
     Args:
@@ -78,9 +92,7 @@ def select_threshold(val_scores, val_labels) -> float:
         val_labels: iterable of int labels (0 = legit, 1 = phishing).
 
     Returns:
-        A float threshold in [0, 1].  Falls back to 0.5 if no threshold in the
-        search range achieves recall >= 0.95 (model likely needs more training
-        or heavier class weights — eval gates will report the failure).
+        A float threshold in [0, 1].
     """
     import numpy as np
     from sklearn.metrics import precision_score, recall_score
@@ -88,37 +100,57 @@ def select_threshold(val_scores, val_labels) -> float:
     scores = np.asarray(val_scores, dtype=float)
     labels = np.asarray(val_labels, dtype=int)
 
-    best_threshold = 0.5
-    best_precision = 0.0
-    found = False
+    candidates: list[tuple[float, float]] = []  # (fbeta, threshold) meeting both gates
+    # Fallback: highest recall among thresholds that still satisfy the precision gate.
+    fb_threshold = 0.5
+    fb_recall = -1.0
 
-    # Iterate low → high: at low thresholds recall is high; stop-condition is
-    # recall >= gate, maximise precision (i.e., keep going while gate holds).
     for t in np.arange(0.05, 0.96, 0.01):
         preds = (scores >= t).astype(int)
         recall = float(recall_score(labels, preds, pos_label=1, zero_division=0))
         precision = float(precision_score(labels, preds, pos_label=1, zero_division=0))
-        if recall >= RECALL_GATE and precision > best_precision:
-            best_precision = precision
-            best_threshold = float(round(t, 4))
-            found = True
 
-    if not found:
-        logger.warning(
-            "No threshold in [0.05, 0.95] achieves recall >= %.2f on val set. "
-            "Falling back to 0.5 — model likely needs more training, heavier "
-            "phishing_class_multiplier, or more data. Gates will fail.",
-            RECALL_GATE,
-        )
-    else:
+        if precision >= PRECISION_GATE and recall > fb_recall:
+            fb_recall = recall
+            fb_threshold = float(round(t, 4))
+
+        if recall >= RECALL_GATE and precision >= PRECISION_GATE:
+            denom = THRESHOLD_BETA_SQ * precision + recall
+            fbeta = (1 + THRESHOLD_BETA_SQ) * precision * recall / denom if denom > 0 else 0.0
+            candidates.append((fbeta, float(round(t, 4))))
+
+    if candidates:
+        # On a realistic (overlapping) val set F2 has a single interior peak. On a
+        # near-separable set many thresholds tie at the top — pick the MEDIAN of
+        # that optimal plateau: the most robust operating point, avoiding both the
+        # over-flagging low edge and the FN-prone high edge.
+        best_fbeta = max(f for f, _ in candidates)
+        tied = [t for f, t in candidates if f >= best_fbeta - 1e-9]
+        best_threshold = float(np.median(tied))
         final_preds = (scores >= best_threshold).astype(int)
-        final_recall = float(recall_score(labels, final_preds, pos_label=1, zero_division=0))
         logger.info(
-            "Selected threshold=%.4f | val recall=%.3f precision=%.3f",
-            best_threshold, final_recall, best_precision,
+            "Selected threshold=%.4f (F2-max plateau median, both gates met) | "
+            "val recall=%.3f precision=%.3f",
+            best_threshold,
+            float(recall_score(labels, final_preds, pos_label=1, zero_division=0)),
+            float(precision_score(labels, final_preds, pos_label=1, zero_division=0)),
         )
+        return best_threshold
 
-    return best_threshold
+    if fb_recall >= 0.0:
+        logger.warning(
+            "No threshold met both gates on val; falling back to highest-recall "
+            "threshold=%.4f (precision >= %.2f, val recall=%.3f). Gates may fail.",
+            fb_threshold, PRECISION_GATE, fb_recall,
+        )
+        return fb_threshold
+
+    logger.warning(
+        "No threshold met precision >= %.2f on val; falling back to 0.5 — model "
+        "likely needs more training or data. Gates will fail.",
+        PRECISION_GATE,
+    )
+    return 0.5
 
 
 # ---------------------------------------------------------------------------
